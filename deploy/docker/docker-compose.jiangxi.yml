@@ -1,0 +1,38 @@
+# 江西环境覆盖配置
+# 用法: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.jiangxi.yml up -d
+
+services:
+  industrial-ai:
+    container_name: industrial-ai-jiangxi
+    env_file:
+      - ./.env.prod.jiangxi
+    ports:
+      - "9300:80"
+
+  knb-celery-worker:
+    container_name: knb-celery-worker-jiangxi
+    env_file:
+      - ./.env.prod.jiangxi
+
+  # Redis 端口覆盖（避免与服务器上已有的 redis 冲突）
+  redis:
+    container_name: redis-jiangxi
+    ports:
+      - "16379:6379"
+
+  # MinIO 端口覆盖（避免与服务器上已有的 minio 冲突）
+  minio:
+    container_name: minio-jiangxi
+    ports: !override
+      - "9002:9000"
+      - "9003:9001"
+
+  # 维修工单评分服务（使用 jiangxi 的环境变量）
+  repair-suggestion:
+    container_name: repair-suggestion-jiangxi
+    env_file:
+      - ./.env.prod.jiangxi
+
+  mqtt-etl:
+    env_file:
+      - ./.env.prod.jiangxi

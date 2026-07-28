@@ -1,0 +1,265 @@
+- generic [ref=e22]:
+  - banner [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - link "AI 数智资产管理系统" [ref=e26] [cursor=pointer]:
+          - /url: /dashboard
+          - generic [ref=e27]: AI
+          - generic [ref=e28]: 数智资产管理系统
+        - navigation [ref=e29]:
+          - button "AI 工作流 ▼" [ref=e31] [cursor=pointer]:
+            - text: AI 工作流
+            - generic [ref=e32]: ▼
+          - button "诊断与建议 ▼" [ref=e34] [cursor=pointer]:
+            - text: 诊断与建议
+            - generic [ref=e35]: ▼
+          - button "数据与任务 ▼" [ref=e37] [cursor=pointer]:
+            - text: 数据与任务
+            - generic [ref=e38]: ▼
+          - button "AI 智能问答 ▼" [ref=e40] [cursor=pointer]:
+            - text: AI 智能问答
+            - generic [ref=e41]: ▼
+          - button "系统管理 ▼" [ref=e43] [cursor=pointer]:
+            - text: 系统管理
+            - generic [ref=e44]: ▼
+      - generic [ref=e45]:
+        - link "生成 AI 报告 +" [ref=e46] [cursor=pointer]:
+          - /url: /report
+          - generic [ref=e47]: 生成 AI 报告
+          - generic [ref=e48]: +
+        - generic [ref=e51]: AI 在线
+        - generic [ref=e52]:
+          - generic [ref=e53]: 用
+          - generic [ref=e54]:
+            - paragraph [ref=e55]: 用户
+            - paragraph [ref=e56]: 已登录
+          - button "退出" [ref=e57] [cursor=pointer]
+  - main [ref=e58]:
+    - generic [ref=e200]:
+      - generic [ref=e202]:
+        - button "+ 新建会话" [ref=e204] [cursor=pointer]
+        - generic [ref=e205]:
+          - generic [ref=e206]: 最近会话
+          - generic [ref=e207] [cursor=pointer]:
+            - generic [ref=e208]: 新会话
+            - generic [ref=e209]: 今天 02:38
+            - button "✕" [ref=e210]
+          - generic [ref=e211] [cursor=pointer]:
+            - generic [ref=e212]: 新会话
+            - generic [ref=e213]: 今天 02:01
+            - button "✕" [ref=e214]
+          - generic [ref=e215] [cursor=pointer]:
+            - generic [ref=e216]: 新会话
+            - generic [ref=e217]: 今天 00:45
+            - button "✕" [ref=e218]
+        - generic [ref=e219] [cursor=pointer]: 🔄 刷新问答记忆
+      - generic [ref=e220]:
+        - generic [ref=e221]:
+          - generic [ref=e223]:
+            - text: 放泡沫机电气原理图
+            - generic [ref=e224]: 02:39
+          - generic [ref=e226]:
+            - generic [ref=e227]: 🤖
+            - generic [ref=e228]:
+              - generic [ref=e229]: 已检索 江西基地-合规性知识库、贝特瑞-合规性知识库、连铸、铸带、连冲、球磨机、合膏机、连涂、清时连涂线、固化、膏栅分离设备、包片机、铸焊机、全自动封盖线-盒盖、全自动封盖线-端子机、全自动封盖线-码垛机、配酸制水设备、加酸辅房设备、充电机、化成水槽、小包装、大包装、半自动入槽机、切粒机、悬臂吊、冷冻机组、自动加酸机
+              - generic [ref=e230]:
+                - paragraph [ref=e231]:
+                  - text: 根据提供的知识库，放泡沫机电气原理图是一套典型的中小型自动化专机电气系统图纸
+                  - superscript [ref=e232]: "[3]"
+                  - text: 。该系统采用
+                  - strong [ref=e233]: “PLC逻辑控制 + 继电器/接触器驱动 + 纯机械执行”
+                  - text: 的架构
+                  - superscript [ref=e234]: "[3]"
+                  - text: 。
+                - paragraph [ref=e235]:
+                  - text: 该图纸共5页，解析时间为2026-07-18
+                  - superscript [ref=e236]: "[1]"
+                  - superscript [ref=e237]: "[3]"
+                  - text: 。系统整体划分为以下五大核心功能模块
+                  - superscript [ref=e238]: "[3]"
+                  - text: ：
+                - list [ref=e239]:
+                  - listitem [ref=e240]:
+                    - strong [ref=e241]: 供电电路
+                    - text: （第1页）
+                    - strong [ref=e242]: CITREF_5
+                    - text: ：该页为继电器控制原理图，工程师建议在实际部署前补充热过载保护、本地急停按钮，并验证安全回路完整性
+                    - superscript [ref=e243]: "[4]"
+                    - text: 。
+                  - listitem [ref=e244]:
+                    - strong [ref=e245]: 运行状态指示回路
+                    - text: （第2页）
+                    - strong [ref=e246]: CITREF_7
+                    - text: ：如需进一步分析PLC梯形图逻辑或输出回路，需要提供后续图纸
+                    - superscript [ref=e247]: "[4]"
+                    - superscript [ref=e248]: "[5]"
+                    - text: 。
+                  - listitem [ref=e249]:
+                    - strong [ref=e250]: 安全回路
+                    - text: ：包含安全继电器回路图（含急停、安全门、双手操作等）、输出回路与动力回路原理图，以及电磁兼容接地方案
+                    - superscript [ref=e251]: "[5]"
+                    - text: 。
+                  - listitem [ref=e252]:
+                    - strong [ref=e253]: PLC输出端子分配图
+                    - text: （第4页）
+                    - strong [ref=e254]: CITREF_11
+                    - text: ：该图纸为典型的PLC数字量输出模块接线图，用于控制泡沫机的执行机构（气缸、电机、声光报警等）
+                    - strong [ref=e255]: CITREF_12
+                    - text: 。
+                  - listitem [ref=e256]:
+                    - strong [ref=e257]: 工位布局示意图
+                    - text: ：图纸本身未标注任何元件型号、参数或编号
+                    - superscript [ref=e258]: "[6]"
+                    - text: ，仅能从工位顺序推断出“纸箱输送工位 → 放泡沫工位 → 推泡沫工位”的工艺流程
+                    - superscript [ref=e259]: "[6]"
+                    - text: 。
+              - generic [ref=e260]:
+                - generic [ref=e261]: 📎 引用文档
+                - generic [ref=e263]:
+                  - generic [ref=e264]: 放泡沫机电气原理图1(1)_说明文档_V1.0.md
+                  - generic [ref=e265]: 匹配度 55%
+                  - generic [ref=e266]:
+                    - button "👁 预览" [active] [ref=e267] [cursor=pointer]
+                    - button "⬇ 下载" [ref=e268] [cursor=pointer]
+              - generic [ref=e269]: 02:39
+        - generic [ref=e271]:
+          - textbox "💬 输入你的问题..." [ref=e272]
+          - button "发送" [disabled] [ref=e273]
+      - generic [ref=e275]:
+        - generic [ref=e276]:
+          - generic [ref=e277]: 🔮 AI 匹配的知识库 （上个问题）
+          - generic [ref=e278]:
+            - generic [ref=e279]:
+              - generic [ref=e280]: 🛡️
+              - generic [ref=e281]: 江西基地-合规性知识库
+              - generic [ref=e282]: AI
+            - generic [ref=e283]:
+              - generic [ref=e284]: 🛡️
+              - generic [ref=e285]: 贝特瑞-合规性知识库
+              - generic [ref=e286]: AI
+            - generic [ref=e287]:
+              - generic [ref=e288]: 📌
+              - generic [ref=e289]: 连铸
+              - generic [ref=e290]: AI
+            - generic [ref=e291]:
+              - generic [ref=e292]: 📌
+              - generic [ref=e293]: 铸带
+              - generic [ref=e294]: AI
+            - generic [ref=e295]:
+              - generic [ref=e296]: 📌
+              - generic [ref=e297]: 连冲
+              - generic [ref=e298]: AI
+            - generic [ref=e299]:
+              - generic [ref=e300]: 📌
+              - generic [ref=e301]: 球磨机
+              - generic [ref=e302]: AI
+            - generic [ref=e303]:
+              - generic [ref=e304]: 📌
+              - generic [ref=e305]: 合膏机
+              - generic [ref=e306]: AI
+            - generic [ref=e307]:
+              - generic [ref=e308]: 📌
+              - generic [ref=e309]: 连涂
+              - generic [ref=e310]: AI
+            - generic [ref=e311]:
+              - generic [ref=e312]: 📌
+              - generic [ref=e313]: 清时连涂线
+              - generic [ref=e314]: AI
+            - generic [ref=e315]:
+              - generic [ref=e316]: 📌
+              - generic [ref=e317]: 固化
+              - generic [ref=e318]: AI
+            - generic [ref=e319]:
+              - generic [ref=e320]: 📌
+              - generic [ref=e321]: 膏栅分离设备
+              - generic [ref=e322]: AI
+            - generic [ref=e323]:
+              - generic [ref=e324]: 📌
+              - generic [ref=e325]: 包片机
+              - generic [ref=e326]: AI
+            - generic [ref=e327]:
+              - generic [ref=e328]: 📌
+              - generic [ref=e329]: 铸焊机
+              - generic [ref=e330]: AI
+            - generic [ref=e331]:
+              - generic [ref=e332]: 📌
+              - generic [ref=e333]: 全自动封盖线-盒盖
+              - generic [ref=e334]: AI
+            - generic [ref=e335]:
+              - generic [ref=e336]: 📌
+              - generic [ref=e337]: 全自动封盖线-端子机
+              - generic [ref=e338]: AI
+            - generic [ref=e339]:
+              - generic [ref=e340]: 📌
+              - generic [ref=e341]: 全自动封盖线-码垛机
+              - generic [ref=e342]: AI
+            - generic [ref=e343]:
+              - generic [ref=e344]: 📌
+              - generic [ref=e345]: 配酸制水设备
+              - generic [ref=e346]: AI
+            - generic [ref=e347]:
+              - generic [ref=e348]: 📌
+              - generic [ref=e349]: 加酸辅房设备
+              - generic [ref=e350]: AI
+            - generic [ref=e351]:
+              - generic [ref=e352]: 📌
+              - generic [ref=e353]: 充电机
+              - generic [ref=e354]: AI
+            - generic [ref=e355]:
+              - generic [ref=e356]: 📌
+              - generic [ref=e357]: 化成水槽
+              - generic [ref=e358]: AI
+            - generic [ref=e359]:
+              - generic [ref=e360]: 📌
+              - generic [ref=e361]: 小包装
+              - generic [ref=e362]: AI
+            - generic [ref=e363]:
+              - generic [ref=e364]: 📌
+              - generic [ref=e365]: 大包装
+              - generic [ref=e366]: AI
+            - generic [ref=e367]:
+              - generic [ref=e368]: 📌
+              - generic [ref=e369]: 半自动入槽机
+              - generic [ref=e370]: AI
+            - generic [ref=e371]:
+              - generic [ref=e372]: 📌
+              - generic [ref=e373]: 切粒机
+              - generic [ref=e374]: AI
+            - generic [ref=e375]:
+              - generic [ref=e376]: 📌
+              - generic [ref=e377]: 悬臂吊
+              - generic [ref=e378]: AI
+            - generic [ref=e379]:
+              - generic [ref=e380]: 📌
+              - generic [ref=e381]: 冷冻机组
+              - generic [ref=e382]: AI
+            - generic [ref=e383]:
+              - generic [ref=e384]: 📌
+              - generic [ref=e385]: 自动加酸机
+              - generic [ref=e386]: AI
+        - generic [ref=e387]:
+          - generic [ref=e388]: 👆 手动选择的知识库 （下个问题）
+          - generic [ref=e390]: 未选择（将使用 AI 自动判断）
+          - button "+ 添加/修改知识库" [ref=e391] [cursor=pointer]
+        - generic [ref=e392]:
+          - text: 💡 手动选择的 KB 会与 AI 自动判断合并，作为
+          - strong [ref=e393]: 下个问题
+          - text: 的检索范围。
+      - generic [ref=e395]:
+        - generic [ref=e396]:
+          - generic [ref=e397]:
+            - heading "放泡沫机电气原理图1(1)_说明文档_V1.0.md" [level=3] [ref=e398]
+            - paragraph [ref=e399]: "数据集: 0a8e7d9e80eb11f1a5da75e60e83b462 · 文档: 4495724481fa11f182d9d112b2b8ed59"
+          - button "×" [ref=e400] [cursor=pointer]
+        - generic [ref=e404]:
+          - generic [ref=e405]:
+            - button "上一页" [disabled] [ref=e406]
+            - generic [ref=e407]: 1 / ?
+            - button "下一页" [disabled] [ref=e408]
+          - generic [ref=e410]:
+            - checkbox "全部页面" [ref=e411]
+            - text: 全部页面
+        - generic [ref=e415]:
+          - link "在新窗口中打开" [ref=e416] [cursor=pointer]:
+            - /url: /api/kb-qa/ragflow/document-download?dataset_id=0a8e7d9e80eb11f1a5da75e60e83b462&document_id=4495724481fa11f182d9d112b2b8ed59
+          - button "关闭" [ref=e417] [cursor=pointer]

@@ -1,0 +1,22 @@
+MQTT_BROKER=101.133.134.25
+MQTT_PORT=1883
+MQTT_TOPIC=Alarm/chaowei/jxcw
+# 新增：NH topic，数据结构未知，先原样落库到 device_nh_raw，等跑起来拿到真实
+# 样例后再改造成结构化解析（见 README「device_nh_raw」）
+MQTT_TOPIC_NH=NH/chaowei/jxcw
+MQTT_USER=admin
+MQTT_PASS=CHANGE_ME
+MQTT_QOS=0
+
+DB_HOST=10.1.2.227
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=postgres
+DB_PASS=CHANGE_ME
+
+BATCH_SIZE=200
+BATCH_TIMEOUT=5
+
+DEAD_LETTER_DIR=./dead_letter
+
+LOG_LEVEL=INFO

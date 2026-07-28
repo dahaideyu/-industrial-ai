@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>合规性知识库 — 收集项列表 + 文档管理</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f1f5f9;color:#0f172a;line-height:1.5}
+.page{max-width:96vw;margin:0 auto;padding:24px}
+
+/* 面包屑 */
+.br{display:flex;align-items:center;gap:8px;padding:10px 16px;background:#fff;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:16px;font-size:13px}
+.br .s{color:#cbd5e1}
+.br .n{color:#64748b;padding:4px 10px;cursor:pointer;border-radius:6px;font-size:12px}
+.br .n:hover{background:#f1f5f9}
+.br .cur{background:#fef3c7;color:#b45309;font-weight:600;border-radius:16px;padding:4px 14px}
+
+/* 两列布局 */
+.split{display:flex;gap:12px;min-height:500px}
+.tree-panel{width:210px;flex-shrink:0;background:#fff;border-radius:10px;padding:14px;border:1px solid #e2e8f0;font-size:12px}
+.tree-panel .tt{font-size:10px;color:#94a3b8;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.tree-item{padding:5px 10px;border-radius:5px;cursor:pointer;margin-bottom:1px;color:#64748b;font-size:12px;display:flex;align-items:center;gap:5px;transition:all .1s}
+.tree-item:hover{background:#f8fafc}
+.tree-item.active{background:#fef3c7;color:#b45309;font-weight:600;border-left:3px solid #b45309}
+.tree-item.l2{padding-left:22px;font-size:11px}
+.tree-item.l3{padding-left:38px;font-size:11px;color:#94a3b8}
+.tree-div{border-top:1px solid #e2e8f0;margin:8px 0;padding-top:8px}
+.main{flex:1;min-width:0}
+
+/* 统计 */
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+.sc{background:#fff;border-radius:10px;padding:14px;border:1px solid #e2e8f0;text-align:center}
+.sc .sl{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px}
+.sc .sv{font-size:24px;font-weight:700}
+.sc .sb{height:5px;background:#e2e8f0;border-radius:3px;margin-top:6px;overflow:hidden}
+.sc .sbf{height:100%;border-radius:3px}
+
+.tag{font-size:10px;padding:3px 8px;border-radius:6px;font-weight:500;display:inline-block}
+.tag.green{background:#dcfce7;color:#16a34a}
+.tag.red{background:#fef2f2;color:#ef4444}
+.tag.amber{background:#fef3c7;color:#b45309}
+.tag.blue{background:#dbeafe;color:#2563eb}
+.tag.gray{background:#f1f5f9;color:#94a3b8}
+.tag.skip{background:#fef2f2;color:#ef4444;text-decoration:line-through}
+
+/* 按钮 */
+.btn{padding:7px 14px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:12px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
+.btn:hover{background:#f8fafc}
+.btn.amber{background:#b45309;color:#fff;border-color:#b45309}
+.btn.blue{background:#2563eb;color:#fff;border-color:#2563eb}
+.btn.xs{padding:4px 10px;font-size:11px;border-radius:5px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* 收集项行 */
+.items-wrap{background:#fff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden}
+.item-row{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f1f5f9;gap:14px;cursor:pointer;transition:background .1s}
+.item-row:hover{background:#fffbeb}
+.item-row.expired{background:#fffbfb}
+.item-icon{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.item-icon.valid{background:#dcfce7;color:#16a34a}
+.item-icon.expiring{background:#fef3c7;color:#f59e0b}
+.item-icon.expired{background:#fef2f2;color:#ef4444}
+.item-icon.unknown{background:#f1f5f9;color:#94a3b8}
+.item-info{flex:1;min-width:0}
+.item-name{font-weight:600;font-size:14px}
+.item-meta{font-size:11px;color:#94a3b8;margin-top:2px}
+.item-date{font-size:12px;font-weight:500}
+.item-score{text-align:center;min-width:50px}
+.item-score .val{font-size:20px;font-weight:700}
+.item-actions{display:flex;gap:6px;flex-shrink:0}
+
+.section-title{font-size:14px;font-weight:600;color:#0f172a;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.section-title .badge{font-size:10px;background:#e2e8f0;padding:2px 8px;border-radius:10px;color:#64748b;font-weight:400}
+
+/* 翻页效果 */
+.pages{display:flex;justify-content:center;gap:40px;margin:30px 0;align-items:center}
+.pages .arrow{font-size:32px;color:#94a3b8;cursor:pointer;padding:10px}
+.pages .arrow:hover{color:#b45309}
+.pages .label{font-size:14px;font-weight:600;color:#64748b;text-align:center}
+
+/* ===== 第2页：文档管理 ===== */
+.doc-page{background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:24px}
+.doc-page h3{font-size:16px;font-weight:700;margin-bottom:4px}
+.doc-page .sub{font-size:12px;color:#94a3b8;margin-bottom:20px}
+
+/* 上传区域 */
+.upload-zone{border:2px dashed #e2e8f0;border-radius:10px;padding:40px;text-align:center;margin-bottom:20px;transition:all .15s}
+.upload-zone:hover{border-color:#b45309;background:#fffbeb}
+.upload-zone .icon{font-size:36px;margin-bottom:8px}
+.upload-zone .text{font-size:14px;color:#64748b}
+.upload-zone .hint{font-size:11px;color:#94a3b8;margin-top:4px}
+
+/* 文档历史 */
+.doc-history{margin-bottom:20px}
+.doc-history h4{font-size:14px;font-weight:600;margin-bottom:10px}
+.doc-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:8px}
+.doc-card .dh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.doc-card .dn{font-weight:600;font-size:14px}
+.doc-card .dm{font-size:11px;color:#94a3b8}
+
+/* AI检测 */
+.vision-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;margin-bottom:12px}
+.vision-box.warn{background:#fefce8;border-color:#fde68a}
+.vision-box h5{font-size:13px;font-weight:600;margin-bottom:8px}
+.vis-row{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px}
+.vis-row .ic{font-size:16px;width:24px;text-align:center}
+.vis-row .lb{color:#64748b;min-width:55px}
+.vis-row .vl{font-weight:500}
+
+/* 有效期输入（在文档页面上） */
+.date-fill{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin:12px 0}
+.date-fill .lbl{font-size:12px;color:#b45309;font-weight:500}
+.date-fill input{padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;outline:none;width:130px}
+.date-fill input:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.date-fill span{color:#94a3b8}
+
+/* AI审核结果 */
+.review-result{background:#f8fafc;border-radius:8px;padding:14px 16px;margin-top:12px}
+.review-result .rr{display:flex;justify-content:space-between;align-items:center}
+.review-result .status{font-size:13px}
+.score-row{display:flex;gap:24px;margin-top:10px}
+.score-item{text-align:center}
+.score-item .sv{font-size:22px;font-weight:700}
+.score-item .sl{font-size:10px;color:#94a3b8}
+
+.hint-box{margin-top:20px;padding:14px 18px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:12px;color:#1e40af;line-height:1.6}
+</style>
+</head>
+<body>
+
+<!-- ============================== 第1页 ============================== -->
+<div class="page" id="page1">
+  <div class="br">
+    <span class="n">🏭 江西基地</span><span class="s">›</span>
+    <span class="n">🛡️ 合规性知识库</span>
+  </div>
+
+  <div class="stats">
+    <div class="sc"><div class="sl">收集进度</div><div class="sv" style="color:#b45309">46%</div><div class="sb"><div class="sbf" style="width:46%;background:#3b82f6"></div></div></div>
+    <div class="sc"><div class="sl">质量分</div><div class="sv">72</div><div class="sb"><div class="sbf" style="width:72%;background:#16a34a"></div></div></div>
+    <div class="sc"><div class="sl">有效文档</div><div class="sv" style="color:#16a34a">8</div></div>
+    <div class="sc"><div class="sl">即将过期</div><div class="sv" style="color:#f59e0b">2</div></div>
+    <div class="sc"><div class="sl">已过期/缺失</div><div class="sv" style="color:#ef4444">3</div></div>
+  </div>
+
+  <div class="split">
+    <!-- 侧边栏 -->
+    <div class="tree-panel">
+      <div class="tt">层级结构</div>
+      <div class="tree-item active">🛡️ 合规性知识库</div>
+      <div class="tree-div"></div>
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:4px">知识库类型</div>
+      <div class="tree-item">📐 设备说明</div>
+      <div class="tree-item">📋 设备SOP</div>
+    </div>
+
+    <!-- 主内容：收集项列表 -->
+    <div class="main">
+      <div class="section-title">收集项 <span class="badge">13个收集项 · 含有效期追踪</span></div>
+
+      <div class="items-wrap">
+
+        <!-- 正常 -->
+        <div class="item-row">
+          <div class="item-icon valid">✓</div>
+          <div class="item-info">
+            <div class="item-name">安全生产许可证</div>
+            <div class="item-meta">许可与证照 · 2个文档版本</div>
+            <div class="item-meta">
+              <span class="tag green">🤖已盖章</span>
+              <span class="tag green">🤖已签名</span>
+              <span class="tag blue">有效期至 2026-12-31</span>
+            </div>
+          </div>
+          <div class="item-score"><div class="val" style="color:#16a34a">85</div><div style="font-size:10px;color:#94a3b8">得分</div></div>
+          <div class="item-actions">
+            <button class="btn btn-xs" onclick="showPage(2)">📄 管理文档</button>
+            <button class="btn btn-xs" style="color:#b45309">🚫 不适用</button>
+          </div>
+        </div>
+
+        <!-- 待填写有效期 -->
+        <div class="item-row" style="background:#fffbfb">
+          <div class="item-icon unknown">⚠</div>
+          <div class="item-info">
+            <div class="item-name">排污许可证</div>
+            <div class="item-meta">许可与证照 · 1个文档版本</div>
+            <div class="item-meta">
+              <span class="tag green">🤖已盖章</span>
+              <span class="tag amber">签名待确认</span>
+              <span class="tag red">⚠ 有效期待填写</span>
+            </div>
+          </div>
+          <div class="item-score"><div class="val" style="color:#94a3b8">—</div><div style="font-size:10px;color:#94a3b8">待填写</div></div>
+          <div class="item-actions">
+            <button class="btn btn-xs" onclick="showPage(3)">📄 管理文档</button>
+            <button class="btn btn-xs" style="color:#b45309">🚫 不适用</button>
+          </div>
+        </div>
+
+        <!-- 已过期 -->
+        <div class="item-row expired">
+          <div class="item-icon expired">✗</div>
+          <div class="item-info">
+            <div class="item-name">消防验收意见书</div>
+            <div class="item-meta">许可与证照 · 1个文档版本</div>
+            <div class="item-meta">
+              <span class="tag green">🤖已盖章</span>
+              <span class="tag red">缺少签名</span>
+              <span class="tag red">已过期 180 天</span>
+            </div>
+          </div>
+          <div class="item-score"><div class="val" style="color:#ef4444">0</div><div style="font-size:10px;color:#94a3b8">已过期</div></div>
+          <div class="item-actions">
+            <button class="btn btn-xs" onclick="showPage(2)">📄 管理文档</button>
+            <button class="btn btn-xs" style="color:#b45309">🚫 不适用</button>
+          </div>
+        </div>
+
+        <!-- 临期 -->
+        <div class="item-row">
+          <div class="item-icon expiring">⏰</div>
+          <div class="item-info">
+            <div class="item-name">防雷检测报告</div>
+            <div class="item-meta">检测报告 · 1个文档版本</div>
+            <div class="item-meta">
+              <span class="tag green">🤖已盖章</span>
+              <span class="tag green">🤖已签名</span>
+              <span class="tag amber">剩余 45 天过期（每日递减）</span>
+            </div>
+          </div>
+          <div class="item-score"><div class="val" style="color:#f59e0b">62</div><div style="font-size:10px;color:#94a3b8">临期递减</div></div>
+          <div class="item-actions">
+            <button class="btn btn-xs" onclick="showPage(2)">📄 管理文档</button>
+            <button class="btn btn-xs" style="color:#b45309">🚫 不适用</button>
+          </div>
+        </div>
+
+        <!-- 无文档 -->
+        <div class="item-row">
+          <div class="item-icon unknown">—</div>
+          <div class="item-info">
+            <div class="item-name">应急演练记录</div>
+            <div class="item-meta">应急管理 · 0个文档</div>
+            <div class="item-meta" style="color:#94a3b8">尚未上传文档</div>
+          </div>
+          <div class="item-score"><div class="val" style="color:#94a3b8">—</div></div>
+          <div class="item-actions">
+            <button class="btn btn-xs blue" onclick="showPage(2)">📤 上传文档</button>
+            <button class="btn btn-xs" style="color:#b45309">🚫 不适用</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="hint-box" style="margin-top:14px">
+        <strong>📌 说明：</strong> 收集项展示最新文档版本的有效期。有效期的延长/修改在「文档管理」页面上传新版本时进行。过期/临期提醒每周一发送给文档上传人。
+      </div>
+    </div>
+  </div>
+
+  <!-- 翻页箭头 -->
+  <div class="pages">
+    <div></div>
+    <div class="label">
+      点击「📄 管理文档」→ 进入下方文档管理页面<br>
+      <span style="font-size:11px;color:#94a3b8">（2个场景：已识别有效期 ✅ / 未识别有效期 ⚠）</span>
+    </div>
+    <div class="arrow" onclick="showPage(2)" title="下一页">▼</div>
+  </div>
+</div>
+
+<!-- ============================== 第2页：文档管理（已识别有效期） ============================== -->
+<div class="page" id="page2" style="display:none">
+  <div class="br">
+    <span class="n">🏭 江西基地</span><span class="s">›</span>
+    <span class="n" onclick="showPage(1)" style="cursor:pointer">🛡️ 合规性知识库</span><span class="s">›</span>
+    <span class="n" onclick="showPage(1)" style="cursor:pointer">📋 收集项列表</span><span class="s">›</span>
+    <span class="cur">📄 安全生产许可证</span>
+  </div>
+
+  <div class="doc-page">
+    <h3>📄 安全生产许可证</h3>
+    <div class="sub">许可与证照 · 需加盖企业公章 · 识别有效期/盖章/签名</div>
+
+    <!-- 上传区域 -->
+    <div class="upload-zone">
+      <div class="icon">📤</div>
+      <div class="text">拖拽文件到此处，或点击上传</div>
+      <div class="hint">支持 PDF / Word / 图片格式，最大 50MB</div>
+    </div>
+
+    <!-- 已有文档版本 -->
+    <div class="doc-history">
+      <h4>📚 文档版本</h4>
+
+      <!-- 版本2：AI已识别 -->
+      <div class="doc-card">
+        <div class="dh">
+          <div>
+            <span class="dn">安全生产许可证_v2.pdf</span>
+            <span class="tag green">当前版本</span>
+          </div>
+          <span class="dm">上传人: 张三 · 2025-03-15 · 2.1MB</span>
+        </div>
+
+        <!-- AI检测结果 -->
+        <div class="vision-box">
+          <h5>🤖 AI 视觉检测结果</h5>
+          <div class="vis-row"><span class="ic">📅</span><span class="lb">有效期</span><span class="vl">2025-01-01 → 2026-12-31</span> <span class="tag green">已识别</span></div>
+          <div class="vis-row"><span class="ic">🔴</span><span class="lb">公章</span><span class="vl">检测到 1 处</span> <span class="tag green">完整</span></div>
+          <div class="vis-row"><span class="ic">🖊️</span><span class="lb">签名</span><span class="vl">检测到 1 处手写签名</span> <span class="tag green">完整</span></div>
+        </div>
+
+        <!-- AI审核结果 -->
+        <div class="review-result">
+          <div class="rr">
+            <span class="status"><strong>AI 审核完成</strong> <span class="tag green">已审核</span></span>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-xs">🔄 重新审核</button>
+              <button class="btn btn-xs blue">📤 发布到RAGFlow</button>
+            </div>
+          </div>
+          <div class="score-row">
+            <div class="score-item"><div class="sv" style="color:#16a34a">90</div><div class="sl">关联性</div></div>
+            <div class="score-item"><div class="sv" style="color:#16a34a">80</div><div class="sl">质量<br><span style="font-size:9px;color:#94a3b8">盖章/签名完整</span></div></div>
+            <div class="score-item"><div class="sv" style="color:#16a34a">85</div><div class="sl">综合</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 版本1：旧的 -->
+      <div class="doc-card" style="opacity:.6">
+        <div class="dh">
+          <div><span class="dn">安全生产许可证_v1.pdf</span> <span class="tag gray">已替换</span></div>
+          <span class="dm">上传人: 李四 · 2024-06-01 · 1.8MB</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 翻页 -->
+  <div class="pages">
+    <div class="arrow" onclick="showPage(1)" title="返回列表">▲</div>
+    <div class="label">返回收集项列表</div>
+    <div class="arrow" onclick="showPage(3)" title="下一页（未识别有效期场景）">▼</div>
+  </div>
+</div>
+
+<!-- ============================== 第3页：文档管理（未识别有效期） ============================== -->
+<div class="page" id="page3" style="display:none">
+  <div class="br">
+    <span class="n">🏭 江西基地</span><span class="s">›</span>
+    <span class="n" onclick="showPage(1)" style="cursor:pointer">🛡️ 合规性知识库</span><span class="s">›</span>
+    <span class="n" onclick="showPage(1)" style="cursor:pointer">📋 收集项列表</span><span class="s">›</span>
+    <span class="cur">📄 排污许可证</span>
+  </div>
+
+  <div class="doc-page">
+    <h3>📄 排污许可证</h3>
+    <div class="sub">许可与证照 · 需加盖企业公章 · 识别有效期/盖章/签名</div>
+
+    <div class="upload-zone">
+      <div class="icon">📤</div>
+      <div class="text">上传新版本替换或补充文档</div>
+      <div class="hint">支持 PDF / Word / 图片，最大 50MB</div>
+    </div>
+
+    <div class="doc-history">
+      <h4>📚 文档版本</h4>
+
+      <div class="doc-card">
+        <div class="dh">
+          <div><span class="dn">排污许可证_扫描件.pdf</span> <span class="tag green">当前版本</span></div>
+          <span class="dm">上传人: 王五 · 2025-06-20 · 3.5MB</span>
+        </div>
+
+        <!-- AI检测：只识别到盖章，未识别有效期 -->
+        <div class="vision-box warn">
+          <h5 style="color:#92400e">🤖 AI 视觉检测结果</h5>
+          <div class="vis-row"><span class="ic">📅</span><span class="lb">有效期</span><span class="vl" style="color:#ef4444">⚠ 未识别到有效期</span> <span class="tag red">需人工填写</span></div>
+          <div class="vis-row"><span class="ic">🔴</span><span class="lb">公章</span><span class="vl">检测到 1 处</span> <span class="tag green">完整</span></div>
+          <div class="vis-row"><span class="ic">🖊️</span><span class="lb">签名</span><span class="vl">未检测到明确签名</span> <span class="tag amber">待确认</span></div>
+        </div>
+
+        <!-- 手动填写有效期 -->
+        <div class="date-fill">
+          <span class="lbl">⚠ AI 未识别到有效期，请手动填写：</span>
+          <input type="date" value="2025-06-01" placeholder="起始日期">
+          <span>→</span>
+          <input type="date" value="2028-05-31" placeholder="截止日期">
+          <button class="btn btn-xs amber">💾 保存有效期</button>
+        </div>
+
+        <!-- 审核状态 -->
+        <div class="review-result">
+          <div class="rr">
+            <span class="status" style="color:#ef4444"><strong>🚫 有效期缺失，暂不可审核</strong></span>
+            <button class="btn btn-xs blue" disabled title="请先保存有效期">🔄 AI 审核</button>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:6px">
+            💡 保存有效期后，AI审核按钮将变为可用
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pages">
+    <div class="arrow" onclick="showPage(1)" title="返回列表">▲</div>
+    <div class="label">返回收集项列表</div>
+    <div class="arrow" onclick="showPage(2)" title="上一页">▲</div>
+  </div>
+</div>
+
+<div id="page4" style="text-align:center;padding:20px;color:#94a3b8">← 3 个页面：收集项列表 | 文档管理（有有效期）| 文档管理（缺有效期）→</div>
+
+<script>
+function showPage(n) {
+  for (let i=1;i<=3;i++) document.getElementById('page'+i).style.display=(i===n)?'':'none'
+  window.scrollTo({top:0,behavior:'smooth'})
+}
+</script>
+</body>
+</html>

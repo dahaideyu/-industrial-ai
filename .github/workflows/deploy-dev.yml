@@ -1,0 +1,60 @@
+name: Deploy dev to Tencent Cloud
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: industrial-ai-dev-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "${{ secrets.DEPLOY_PORT }}" "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync source
+        shell: bash
+        run: |
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude 'deploy/docker/.env' \
+            -e "ssh -p ${{ secrets.DEPLOY_PORT }} -i ~/.ssh/id_ed25519" \
+            ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/industrial-ai/"
+
+      - name: Build and restart
+        shell: bash
+        run: |
+          ssh -p "${{ secrets.DEPLOY_PORT }}" -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'bash -se' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/industrial-ai
+          install -d -m 700 /data/industrial-ai/config
+          if [ ! -f /data/industrial-ai/config/.env ]; then
+            cp deploy/docker/.env.example /data/industrial-ai/config/.env
+            chmod 600 /data/industrial-ai/config/.env
+          fi
+          ln -sfn /data/industrial-ai/config/.env deploy/docker/.env
+          docker volume inspect industrial_pgdata >/dev/null 2>&1 || docker volume create industrial_pgdata
+          docker volume inspect industrial_minio >/dev/null 2>&1 || docker volume create industrial_minio
+          APP_DATA_ROOT=/data/industrial-ai APP_PORT=9300 \
+            docker compose \
+              -f deploy/docker/docker-compose.yml \
+              -f deploy/docker/docker-compose.tencent.yml \
+              --profile local-db \
+              up -d --build --remove-orphans
+          curl --fail --retry 20 --retry-delay 3 http://127.0.0.1:9300/
+          REMOTE

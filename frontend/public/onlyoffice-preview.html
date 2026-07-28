@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档预览</title>
+<style>
+  body { margin: 0; padding: 0; overflow: hidden; width: 100vw; height: 100vh; }
+  #placeholder { display: flex; align-items: center; justify-content: center; height: 100%; color: #666; font-size: 16px; }
+</style>
+</head>
+<body>
+<div id="placeholder"></div>
+<div id="editor"></div>
+
+<script>
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var fileUrl = params.get('url');
+  var title = params.get('title') || '文档';
+  var mode = params.get('mode') || 'view';
+
+  if (!fileUrl) {
+    document.getElementById('placeholder').textContent = '缺少文件URL参数';
+    return;
+  }
+
+  // OnlyOffice容器内 localhost 指向自身，替换为 host.docker.internal
+  if (fileUrl.indexOf('localhost') !== -1) {
+    fileUrl = fileUrl.replace(/localhost/g, 'host.docker.internal');
+  }
+
+  document.getElementById('placeholder').style.display = 'none';
+
+  var lower = title.toLowerCase();
+  var docType = 'word';
+  if (lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.xlsm')) {
+    docType = 'cell';
+  } else if (lower.endsWith('.pptx') || lower.endsWith('.ppt')) {
+    docType = 'slide';
+  }
+
+  var config = {
+    document: {
+      fileType: lower.split('.').pop() || 'docx',
+      key: Date.now().toString(),
+      title: title,
+      url: fileUrl,
+      permissions: { edit: false, download: true, print: true },
+    },
+    editorConfig: {
+      mode: mode,
+      lang: 'zh-CN',
+      user: { id: 'viewer', name: '预览用户' },
+    },
+    documentType: docType,
+    height: '100%',
+    width: '100%',
+  };
+
+  var s = document.createElement('script');
+  s.src = 'http://localhost:9980/web-apps/apps/api/documents/api.js';
+  s.onload = function() {
+    try { new DocsAPI.DocEditor('editor', config); }
+    catch(e) { document.getElementById('placeholder').style.display = 'flex'; document.getElementById('placeholder').textContent = '加载失败: ' + e.message; }
+  };
+  s.onerror = function() { document.getElementById('placeholder').style.display = 'flex'; document.getElementById('placeholder').textContent = 'OnlyOffice 服务未就绪'; };
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>

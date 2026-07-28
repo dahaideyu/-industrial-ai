@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知识库管理系统 — 方案E深化（4种知识库类型）</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI','PingFang SC',system-ui,sans-serif;background:#f1f5f9;color:#0f172a;min-height:100vh}
+.header{background:#fff;border-bottom:1px solid #e2e8f0;padding:0 24px;position:sticky;top:0;z-index:10}
+.header h1{font-size:18px;padding:14px 0 6px}
+.tabs{display:flex;gap:0;margin-top:6px;overflow-x:auto}
+.tab{padding:10px 18px;border:none;background:none;font-size:13px;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all 0.15s;white-space:nowrap}
+.tab:hover{color:#b45309}
+.tab.active{color:#b45309;border-bottom-color:#b45309;font-weight:600}
+.content{padding:24px;max-width:1300px;margin:0 auto}
+.panel{display:none}
+.panel.active{display:block}
+
+.breadcrumb{display:flex;align-items:center;gap:6px;padding:10px 14px;background:#fff;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:14px;font-size:13px;flex-wrap:wrap}
+.breadcrumb .sep{color:#cbd5e1}
+.breadcrumb .node{color:#64748b;padding:3px 10px;cursor:pointer;border-radius:4px;font-size:12px}
+.breadcrumb .node:hover{background:#f1f5f9}
+.breadcrumb .node.current{background:#fef3c7;color:#b45309;font-weight:600;border-radius:16px;padding:4px 12px}
+
+.stats-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+.stat-card{background:#fff;border-radius:10px;padding:14px;border:1px solid #e2e8f0;text-align:center}
+.stat-card .s-label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:4px}
+.stat-card .s-value{font-size:24px;font-weight:700;color:#0f172a}
+.stat-card .s-value.amber{color:#b45309}
+.stat-card .s-value.green{color:#16a34a}
+.stat-card .s-value.red{color:#ef4444}
+.stat-card .s-bar{height:5px;background:#e2e8f0;border-radius:3px;margin-top:6px}
+.stat-card .s-bar-fill{height:100%;border-radius:3px}
+.stat-card .s-bar-fill.amber{background:#b45309}
+.stat-card .s-bar-fill.green{background:#22c55e}
+.stat-card .s-bar-fill.warn{background:#f59e0b}
+.stat-card .s-bar-fill.red{background:#ef4444}
+.stat-card .s-bar-fill.blue{background:#3b82f6}
+
+.section-title{font-size:14px;font-weight:600;color:#0f172a;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.section-title .badge{font-size:10px;background:#e2e8f0;padding:2px 8px;border-radius:10px;color:#64748b;font-weight:400}
+
+.split-layout{display:flex;gap:12px;min-height:380px}
+.tree-panel{width:210px;flex-shrink:0;background:#fff;border-radius:10px;padding:14px;border:1px solid #e2e8f0;font-size:12px;overflow-y:auto}
+.tree-panel .tree-title{font-size:10px;color:#94a3b8;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+.tree-item{padding:6px 10px;border-radius:5px;cursor:pointer;margin-bottom:1px;color:#64748b;font-size:12px;display:flex;align-items:center;gap:6px;transition:all 0.1s}
+.tree-item:hover{background:#f8fafc}
+.tree-item.active{background:#fef3c7;color:#b45309;font-weight:600;border-left:3px solid #b45309;margin-left:-3px;padding-left:13px}
+.tree-item.l2{padding-left:28px;font-size:11px}
+.tree-item.l3{padding-left:44px;font-size:11px;color:#94a3b8}
+.tree-item .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.tree-item .dot.green{background:#22c55e}
+.tree-item .dot.amber{background:#f59e0b}
+.tree-item .dot.red{background:#ef4444}
+.tree-item .dot.gray{background:#cbd5e1}
+.tree-divider{border-top:1px solid #e2e8f0;margin:10px 0;padding-top:10px}
+
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;align-content:start}
+
+.kb-card{background:#fff;border-radius:10px;padding:16px;border:1px solid #e2e8f0;cursor:pointer;transition:all 0.15s}
+.kb-card:hover{border-color:#b45309;box-shadow:0 2px 12px rgba(180,83,9,0.08)}
+.kb-card.warning{border-color:#fecaca}
+.kb-card .card-icon{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:10px}
+.card-icon.blue{background:#eff6ff;color:#3b82f6}
+.card-icon.amber{background:#fef3c7;color:#b45309}
+.card-icon.green{background:#f0fdf4;color:#16a34a}
+.card-icon.purple{background:#f5f3ff;color:#7c3aed}
+.card-icon.red{background:#fef2f2;color:#ef4444}
+.kb-card .card-name{font-weight:600;font-size:15px;color:#0f172a;margin-bottom:2px}
+.kb-card .card-sub{font-size:11px;color:#94a3b8;margin-bottom:10px}
+.kb-card .card-meta{display:flex;gap:16px;font-size:12px;color:#64748b;margin-bottom:10px;flex-wrap:wrap}
+.kb-card .card-meta strong{color:#0f172a}
+.kb-card .progress-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#64748b;margin-bottom:2px}
+.kb-card .progress-bar{height:5px;background:#e2e8f0;border-radius:3px;margin-bottom:8px}
+.kb-card .progress-fill{height:100%;border-radius:3px}
+.progress-fill.amber{background:#b45309}
+.progress-fill.green{background:#22c55e}
+.progress-fill.warn{background:#f59e0b}
+.progress-fill.red{background:#ef4444}
+.progress-fill.blue{background:#3b82f6}
+.progress-fill.purple{background:#7c3aed}
+
+.tag{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:500}
+.tag.blue{background:#dbeafe;color:#2563eb}
+.tag.amber{background:#fef3c7;color:#b45309}
+.tag.green{background:#dcfce7;color:#16a34a}
+.tag.purple{background:#ede9fe;color:#7c3aed}
+.tag.red{background:#fef2f2;color:#ef4444}
+.tag.gray{background:#f1f5f9;color:#94a3b8}
+
+.workshop-row{background:#fff;border-radius:10px;padding:12px 16px;border:1px solid #e2e8f0;margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:all 0.1s}
+.workshop-row:hover{border-color:#b45309}
+.workshop-row .ws-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.workshop-row .ws-info{flex:1}
+.workshop-row .ws-name{font-weight:600;font-size:13px}
+.workshop-row .ws-sub{font-size:11px;color:#94a3b8}
+.workshop-row .ws-stats{display:flex;gap:24px;text-align:center;font-size:12px}
+.workshop-row .ws-stat-val{font-weight:700;font-size:15px;color:#0f172a}
+.workshop-row .ws-stat-lbl{font-size:10px;color:#94a3b8}
+
+.compliance-item{background:#fff;border-radius:10px;padding:14px 16px;border:1px solid #e2e8f0;margin-bottom:6px;display:flex;align-items:center;gap:14px}
+.compliance-item.expired{border-color:#fecaca;background:#fffbfb}
+.compliance-item .ci-status{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.ci-status.valid{background:#dcfce7;color:#16a34a}
+.ci-status.expiring{background:#fef3c7;color:#f59e0b}
+.ci-status.expired-icon{background:#fef2f2;color:#ef4444}
+.compliance-item .ci-info{flex:1}
+.compliance-item .ci-name{font-weight:600;font-size:14px}
+.compliance-item .ci-dates{font-size:11px;color:#64748b;margin-top:2px}
+.compliance-item .ci-score{text-align:center;min-width:50px}
+.compliance-item .ci-score-val{font-size:20px;font-weight:700}
+.ci-score-val.valid-color{color:#16a34a}
+.ci-score-val.expiring-color{color:#f59e0b}
+.ci-score-val.expired-color{color:#ef4444}
+
+.tip{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;font-size:12px;color:#1e40af;margin-top:12px;line-height:1.6}
+
+/* Custom doc tab */
+.custom-item{background:#fff;border-radius:10px;padding:14px 16px;border:1px solid #e2e8f0;margin-bottom:6px;display:flex;align-items:center;gap:14px}
+.custom-item .ci-icon{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;background:#f8fafc}
+.custom-item .ci-info{flex:1}
+.custom-item .ci-name{font-weight:600;font-size:13px}
+.custom-item .ci-meta{font-size:11px;color:#94a3b8;margin-top:2px}
+
+/* Admin table */
+.admin-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.admin-table{width:100%;background:#fff;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;font-size:13px}
+.admin-table table{width:100%;border-collapse:collapse}
+.admin-table th{background:#f8fafc;padding:10px 14px;text-align:left;font-weight:600;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.3px;border-bottom:1px solid #e2e8f0}
+.admin-table td{padding:9px 14px;border-bottom:1px solid #f1f5f9;color:#0f172a;font-size:12px}
+.admin-table tr:hover td{background:#fafbfc}
+.admin-table .level-0{font-weight:700;color:#0f172a}
+.admin-table .level-1{padding-left:28px;color:#334155}
+.admin-table .level-2{padding-left:48px;color:#64748b;font-size:11px}
+.admin-table .level-tag{font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px}
+.admin-table .row-actions{display:flex;gap:6px}
+.admin-table .row-actions span{padding:2px 8px;font-size:11px;border-radius:4px;cursor:pointer;color:#64748b}
+.admin-table .row-actions span:hover{background:#f1f5f9}
+.admin-table .row-actions span.danger{color:#ef4444}
+.admin-table .row-actions span.danger:hover{background:#fef2f2}
+
+.flex-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pagination{display:flex;justify-content:center;gap:4px;margin-top:12px;font-size:12px}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:99;backdrop-filter:blur(2px)}
+.modal-box{background:#fff;border-radius:12px;padding:24px;width:480px;max-width:90vw;box-shadow:0 20px 40px rgba(0,0,0,.15)}
+.modal-box h3{font-size:16px;margin-bottom:16px}
+
+.pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.pros,.cons{background:#fff;border-radius:10px;padding:14px;border:1px solid #e2e8f0;font-size:13px}
+.pros h4{color:#16a34a;margin-bottom:6px;font-size:13px}
+.cons h4{color:#ef4444;margin-bottom:6px;font-size:13px}
+.pros ul,.cons ul{padding-left:18px}
+.pros li,.cons li{margin-bottom:3px;line-height:1.6}
+
+.scenario-label{font-size:11px;color:#94a3b8;text-transform:uppercase;margin:0 0 8px;letter-spacing:0.5px;font-weight:600}
+
+@media(max-width:768px){
+  .stats-bar{grid-template-columns:repeat(2,1fr)}
+  .split-layout{flex-direction:column}
+  .tree-panel{width:100%}
+  .pros-cons{grid-template-columns:1fr}
+  .card-grid{grid-template-columns:1fr}
+  .workshop-row{flex-wrap:wrap}
+  .workshop-row .ws-stats{gap:12px}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>知识库管理系统 — 方案E深化（4种知识库类型 + 多层级树）</h1>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('base')">🏭 基地总览</button>
+    <button class="tab" onclick="switchTab('workshop')">📁 车间视图（设备说明）</button>
+    <button class="tab" onclick="switchTab('device')">🏗 设备类型 → 知识库</button>
+    <button class="tab" onclick="switchTab('compliance')">🛡️ 合规性知识库详情</button>
+    <button class="tab" onclick="switchTab('custom')">📝 自定义文档</button>
+    <button class="tab" onclick="switchTab('admin')">⚙️ 文档类别配置</button>
+  </div>
+</div>
+
+<div class="content">
+
+<!-- ========== TAB 1: 基地总览（含侧边层级树） ========== -->
+<div id="panel-base" class="panel active">
+
+<div class="scenario-label">一级页面 — 江西基地总览 · KB卡片按完成率排序（低→高）</div>
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+  <div style="display:flex;align-items:center;gap:8px">
+    <span style="background:#fef3c7;padding:5px 14px;border-radius:16px;font-weight:600;font-size:13px;color:#b45309">🏭 江西基地</span>
+    <span style="font-size:11px;color:#94a3b8">最后同步: 2026-06-26 03:00</span>
+  </div>
+  <div style="display:flex;gap:6px">
+    <span style="font-size:11px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;color:#64748b;cursor:pointer">🔄 同步设备类型</span>
+    <span style="font-size:11px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;color:#64748b;cursor:pointer" onclick="switchTab('admin')">📋 管理文档类别</span>
+  </div>
+</div>
+
+<div class="stats-bar">
+  <div class="stat-card"><div class="s-label">总完成率</div><div class="s-value amber">58%</div><div class="s-bar"><div class="s-bar-fill amber" style="width:58%"></div></div></div>
+  <div class="stat-card"><div class="s-label">质量分</div><div class="s-value">73.5</div></div>
+  <div class="stat-card"><div class="s-label">车间数</div><div class="s-value">3</div></div>
+  <div class="stat-card"><div class="s-label">设备类型数</div><div class="s-value">13</div></div>
+  <div class="stat-card"><div class="s-label">已上传文档数</div><div class="s-value">247</div></div>
+</div>
+
+<div class="split-layout" style="min-height:480px">
+  <!-- Left: hierarchy tree -->
+  <div class="tree-panel">
+    <div class="tree-title">层级结构</div>
+    <div class="tree-item active" style="font-weight:600">🏭 江西基地 <span style="margin-left:auto;font-size:10px;color:#94a3b8">58%</span></div>
+    <div class="tree-item l2" onclick="switchTab('workshop')">📁 合膏车间 <span style="margin-left:auto;font-size:10px;color:#94a3b8">6台</span></div>
+    <div class="tree-item l2" onclick="switchTab('workshop')">📁 涂板车间 <span style="margin-left:auto;font-size:10px;color:#94a3b8">4台</span></div>
+    <div class="tree-item l2" onclick="switchTab('workshop')">📁 化成车间 <span style="margin-left:auto;font-size:10px;color:#94a3b8">3台</span></div>
+    <div class="tree-divider"></div>
+    <div style="font-size:10px;color:#94a3b8;margin-bottom:6px">知识库类型</div>
+    <div class="tree-item" onclick="switchTab('compliance')" style="color:#3b82f6">🛡️ 合规性知识库</div>
+    <div class="tree-item" onclick="switchTab('workshop')" style="font-weight:500">📐 设备说明知识库</div>
+    <div class="tree-item" onclick="switchTab('workshop')">📋 设备SOP知识库</div>
+    <div class="tree-item" style="color:#94a3b8;cursor:pointer" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''">📚 历史沉淀知识库</div>
+    <div class="tree-divider"></div>
+    <div style="font-size:10px;color:#94a3b8;margin-bottom:4px">自定义知识库</div>
+    <div class="tree-item" style="font-size:11px;color:#0ea5e9" onclick="switchTab('custom')">📋 基地管理办法</div>
+    <div class="tree-item" style="font-size:11px;color:#0ea5e9" onclick="switchTab('custom')">📋 5S管理制度</div>
+  </div>
+
+  <!-- Right: KB cards sorted by completion rate (lowest first) -->
+  <div style="flex:1">
+    <div class="section-title">知识库类型 <span class="badge">按完成率排序 ↑</span></div>
+    <div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
+
+      <!-- 历史沉淀 — 0%（最低） -->
+      <div class="kb-card" style="border-left:3px solid #7c3aed;opacity:0.85;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between">
+          <div style="flex:1"><div class="card-icon purple" style="margin-bottom:8px">📚</div><div class="card-name">历史沉淀知识库</div><div class="card-sub">车间级别 · 维修工单 + 精益改善任务</div><div class="card-meta"><span>来源 1,326条</span></div></div>
+          <div style="text-align:center;flex-shrink:0"><div style="font-size:22px;font-weight:700;color:#94a3b8">—</div><div style="font-size:10px;color:#94a3b8">延后</div></div>
+        </div><div style="margin-top:auto;padding-top:10px"><div class="progress-row"><span>完成率</span><span>—</span></div><div class="progress-bar"><div class="progress-fill purple" style="width:0%"></div></div></div>
+      </div>
+
+      <!-- 设备SOP — 55% -->
+      <div class="kb-card" onclick="switchTab('workshop')" style="border-left:3px solid #16a34a;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between">
+          <div style="flex:1"><div class="card-icon green" style="margin-bottom:8px">📋</div><div class="card-name">设备SOP知识库</div><div class="card-sub">车间级别 · 操作/点检/保养/异常/防错</div><div class="card-meta"><span>设备类型 13</span><span>文档 189</span></div></div>
+          <div style="text-align:center;flex-shrink:0"><div style="font-size:26px;font-weight:700;color:#16a34a">70.2</div><div style="font-size:10px;color:#94a3b8">评分</div></div>
+        </div><div style="margin-top:auto;padding-top:10px"><div class="progress-row"><span>完成率</span><span>55%</span></div><div class="progress-bar"><div class="progress-fill green" style="width:55%"></div></div></div>
+      </div>
+
+      <!-- 设备说明 — 62% -->
+      <div class="kb-card" onclick="switchTab('workshop')" style="border-left:3px solid #b45309;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between">
+          <div style="flex:1"><div class="card-icon amber" style="margin-bottom:8px">📐</div><div class="card-name">设备说明知识库</div><div class="card-sub">车间级别 · 图纸/手册/参数/备件清单</div><div class="card-meta"><span>设备类型 13</span><span>文档 156</span></div></div>
+          <div style="text-align:center;flex-shrink:0"><div style="font-size:26px;font-weight:700;color:#b45309">73.5</div><div style="font-size:10px;color:#94a3b8">评分</div></div>
+        </div><div style="margin-top:auto;padding-top:10px"><div class="progress-row"><span>完成率</span><span>62%</span></div><div class="progress-bar"><div class="progress-fill amber" style="width:62%"></div></div></div>
+      </div>
+
+      <!-- 合规性 — 77% -->
+      <div class="kb-card" onclick="switchTab('compliance')" style="border-left:3px solid #3b82f6;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between">
+          <div style="flex:1"><div class="card-icon blue" style="margin-bottom:8px">🛡️</div><div class="card-name">合规性知识库</div><div class="card-sub">基地级别 · 安环合规文档与证书</div><div class="card-meta"><span>文档 12</span><span>有效 10</span><span style="color:#ef4444">过期 2</span></div></div>
+          <div style="text-align:center;flex-shrink:0"><div style="font-size:26px;font-weight:700;color:#3b82f6">72</div><div style="font-size:10px;color:#94a3b8">评分</div></div>
+        </div><div style="margin-top:auto;padding-top:10px"><div class="progress-row"><span>完成率</span><span>77%</span></div><div class="progress-bar"><div class="progress-fill blue" style="width:77%"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Custom KBs (sorted: 60% → 78%) -->
+    <div class="section-title" style="margin-top:16px">自定义知识库 <span class="badge">基地级别 · 独立评分，不参与总评</span></div>
+    <div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));margin-bottom:8px">
+      <div class="kb-card" style="border-left:3px solid #0ea5e9;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between"><div style="flex:1"><div class="card-icon" style="background:#f0f9ff;color:#0ea5e9;margin-bottom:8px">📋</div><div class="card-name">5S管理制度</div><div class="card-sub">基地级别 · 自定义类别和收集项</div><div class="card-meta"><span>文档 15</span><span>计划 1</span></div></div><div style="text-align:center;flex-shrink:0"><div style="font-size:26px;font-weight:700;color:#0ea5e9">65</div><div style="font-size:10px;color:#94a3b8">评分</div></div></div>
+        <div style="margin-top:auto;padding-top:10px"><div class="progress-row"><span>完成率</span><span>60%</span></div><div class="progress-bar"><div class="progress-fill" style="width:60%;background:#0ea5e9"></div></div></div>
+      </div>
+      <div class="kb-card" style="border-left:3px solid #0ea5e9;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between"><div style="flex:1"><div class="card-icon" style="background:#f0f9ff;color:#0ea5e9;margin-bottom:8px">📋</div><div class="card-name">基地管理办法</div><div class="card-sub">基地级别 · 自定义类别和收集项</div><div class="card-meta"><span>文档 23</span><span>计划 2</span></div></div><div style="text-align:center;flex-shrink:0"><div style="font-size:26px;font-weight:700;color:#0ea5e9">81</div><div style="font-size:10px;color:#94a3b8">评分</div></div></div>
+        <div style="margin-top:auto;padding-top:10px"><div class="progress-row"><span>完成率</span><span>78%</span></div><div class="progress-bar"><div class="progress-fill" style="width:78%;background:#0ea5e9"></div></div></div>
+      </div>
+      <div style="background:#f8fafc;border-radius:10px;border:2px dashed #e2e8f0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;cursor:pointer">
+        <div style="font-size:24px;color:#94a3b8;margin-bottom:4px">+</div><div style="font-size:12px;font-weight:600;color:#64748b">新建自定义知识库</div><div style="font-size:10px;color:#94a3b8;margin-top:2px;text-align:center">自由创建类别、收集计划<br>独立评分</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tip" style="margin-top:12px">
+  <strong>💡 排序与导航：</strong> KB卡片按<strong>完成率从低到高</strong>排列，需关注的排最前面。左侧层级树在所有页面保持一致——点击树节点可快速跳转；点击右侧知识库卡片进入对应详情。
+</div>
+</div>
+
+<!-- ========== TAB 2: 车间视图（含侧边层级树） ========== -->
+<div id="panel-workshop" class="panel">
+
+<div class="scenario-label">二级页面 — 点击「设备说明知识库」→ 车间级视图 · 按完成率排序</div>
+
+<div class="breadcrumb">
+  <span class="node" onclick="switchTab('base')">🏭 江西基地</span><span class="sep">›</span>
+  <span class="node current">📐 设备说明/SOP知识库</span>
+  <span style="margin-left:auto;font-size:11px;color:#94a3b8">可切换: 设备SOP | 历史沉淀</span>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:8px;font-size:11px">
+  <span style="background:#fef3c7;color:#b45309;padding:3px 10px;border-radius:12px;font-weight:600">📐 设备说明知识库</span>
+  <span style="color:#94a3b8;cursor:pointer;padding:3px 10px">📋 设备SOP知识库</span>
+  <span style="color:#94a3b8;cursor:pointer;padding:3px 10px">📚 历史沉淀知识库</span>
+</div>
+
+<div class="stats-bar">
+  <div class="stat-card"><div class="s-label">完成率</div><div class="s-value amber">62%</div><div class="s-bar"><div class="s-bar-fill amber" style="width:62%"></div></div></div>
+  <div class="stat-card"><div class="s-label">质量分</div><div class="s-value">73.5</div></div>
+  <div class="stat-card"><div class="s-label">涉及车间</div><div class="s-value">3</div></div>
+  <div class="stat-card"><div class="s-label">设备类型数</div><div class="s-value">13</div></div>
+  <div class="stat-card"><div class="s-label">已上传文档</div><div class="s-value">156</div></div>
+</div>
+
+<div class="split-layout" style="min-height:340px">
+  <!-- Left: hierarchy tree (unified) -->
+  <div class="tree-panel">
+    <div class="tree-title">层级结构</div>
+    <div class="tree-item" onclick="switchTab('base')">🏭 江西基地</div>
+    <div class="tree-item l2" onclick="switchTab('device')">📁 合膏车间 <span style="margin-left:auto;font-size:10px;color:#94a3b8">6台</span></div>
+    <div class="tree-item l2" onclick="switchTab('device')">📁 涂板车间 <span style="margin-left:auto;font-size:10px;color:#94a3b8">4台</span></div>
+    <div class="tree-item l2" onclick="switchTab('device')">📁 化成车间 <span style="margin-left:auto;font-size:10px;color:#94a3b8">3台</span></div>
+    <div class="tree-divider"></div>
+    <div class="tree-item" onclick="switchTab('compliance')" style="color:#3b82f6">🛡️ 合规性知识库</div>
+    <div class="tree-item active" style="font-weight:600">📐 设备说明知识库</div>
+    <div class="tree-item" onclick="switchTab('workshop')">📋 设备SOP知识库</div>
+    <div class="tree-item" style="color:#94a3b8;cursor:pointer" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''">📚 历史沉淀知识库</div>
+    <div class="tree-divider"></div>
+    <div class="tree-item" style="font-size:11px;color:#0ea5e9" onclick="switchTab('custom')">📋 基地管理办法</div>
+    <div class="tree-item" style="font-size:11px;color:#0ea5e9" onclick="switchTab('custom')">📋 5S管理制度</div>
+  </div>
+
+  <!-- Right: workshop rows sorted by completion rate -->
+  <div style="flex:1">
+    <div class="section-title">各车间 · 设备说明知识库完成情况 <span class="badge">按完成率排序 ↑</span></div>
+    <div class="workshop-row" onclick="switchTab('device')">
+      <div class="ws-icon" style="background:#fef2f2">📁</div>
+      <div class="ws-info"><div class="ws-name">化成车间</div><div class="ws-sub">3台设备类型 · 最后更新 8小时前</div></div>
+      <div class="ws-stats"><div><div class="ws-stat-val" style="color:#ef4444">41%</div><div class="ws-stat-lbl">完成率</div></div><div><div class="ws-stat-val">62</div><div class="ws-stat-lbl">质量分</div></div><div><div class="ws-stat-val">3</div><div class="ws-stat-lbl">设备类型</div></div><div><div class="ws-stat-val">25</div><div class="ws-stat-lbl">文档</div></div></div>
+      <div class="s-bar" style="width:100px"><div class="s-bar-fill red" style="width:41%"></div></div>
+    </div>
+    <div class="workshop-row" onclick="switchTab('device')">
+      <div class="ws-icon" style="background:#fef3c7">📁</div>
+      <div class="ws-info"><div class="ws-name">涂板车间</div><div class="ws-sub">4台设备类型 · 最后更新 5小时前</div></div>
+      <div class="ws-stats"><div><div class="ws-stat-val" style="color:#f59e0b">52%</div><div class="ws-stat-lbl">完成率</div></div><div><div class="ws-stat-val">70</div><div class="ws-stat-lbl">质量分</div></div><div><div class="ws-stat-val">4</div><div class="ws-stat-lbl">设备类型</div></div><div><div class="ws-stat-val">42</div><div class="ws-stat-lbl">文档</div></div></div>
+      <div class="s-bar" style="width:100px"><div class="s-bar-fill warn" style="width:52%"></div></div>
+    </div>
+    <div class="workshop-row" onclick="switchTab('device')">
+      <div class="ws-icon" style="background:#dcfce7">📁</div>
+      <div class="ws-info"><div class="ws-name">合膏车间</div><div class="ws-sub">6台设备类型 · 最后更新 2小时前</div></div>
+      <div class="ws-stats"><div><div class="ws-stat-val" style="color:#16a34a">68%</div><div class="ws-stat-lbl">完成率</div></div><div><div class="ws-stat-val">75</div><div class="ws-stat-lbl">质量分</div></div><div><div class="ws-stat-val">6</div><div class="ws-stat-lbl">设备类型</div></div><div><div class="ws-stat-val">89</div><div class="ws-stat-lbl">文档</div></div></div>
+      <div class="s-bar" style="width:100px"><div class="s-bar-fill amber" style="width:68%"></div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ========== TAB 3: 设备类型 → 知识库（含侧边层级树） ========== -->
+<div id="panel-device" class="panel">
+
+<div class="scenario-label">三级页面 — 点击车间 → 设备类型列表 · 按完成率排序</div>
+
+<div class="breadcrumb">
+  <span class="node" onclick="switchTab('base')">🏭 江西基地</span><span class="sep">›</span>
+  <span class="node" onclick="switchTab('workshop')">📐 设备说明知识库</span><span class="sep">›</span>
+  <span class="node current">📁 合膏车间</span>
+  <span style="margin-left:auto;font-size:11px;color:#94a3b8">设备类型: 6 | 车间完成率: 68%</span>
+</div>
+
+<div class="split-layout" style="min-height:380px">
+  <!-- Left: hierarchy tree (unified, with device types under selected workshop) -->
+  <div class="tree-panel">
+    <div class="tree-title">层级结构</div>
+    <div class="tree-item" onclick="switchTab('base')">🏭 江西基地</div>
+    <div class="tree-item l2 active" style="font-weight:600">📁 合膏车间 <span style="margin-left:auto;font-size:10px;color:#94a3b8">68%</span></div>
+    <div class="tree-item l3"><span class="dot red"></span> 铸板机 <span style="margin-left:auto;font-size:10px;color:#ef4444">28%</span></div>
+    <div class="tree-item l3"><span class="dot amber"></span> 铅粉机 <span style="margin-left:auto;font-size:10px;color:#f59e0b">55%</span></div>
+    <div class="tree-item l3"><span class="dot amber"></span> 固化炉 <span style="margin-left:auto;font-size:10px;color:#f59e0b">60%</span></div>
+    <div class="tree-item l3"><span class="dot green"></span> 合膏机 <span style="margin-left:auto;font-size:10px;color:#16a34a">75%</span></div>
+    <div class="tree-item l3"><span class="dot green"></span> 涂板机 <span style="margin-left:auto;font-size:10px;color:#16a34a">90%</span></div>
+    <div class="tree-item l3"><span class="dot gray"></span> 和膏机 <span style="margin-left:auto;font-size:10px;color:#94a3b8">停用</span></div>
+    <div class="tree-item l2" style="color:#94a3b8" onclick="switchTab('device')">📁 涂板车间</div>
+    <div class="tree-item l2" style="color:#94a3b8" onclick="switchTab('device')">📁 化成车间</div>
+    <div class="tree-divider"></div>
+    <div class="tree-item" onclick="switchTab('compliance')" style="color:#3b82f6">🛡️ 合规性知识库</div>
+    <div class="tree-item" onclick="switchTab('workshop')">📐 设备说明知识库</div>
+    <div class="tree-item" onclick="switchTab('workshop')">📋 设备SOP知识库</div>
+    <div class="tree-item" style="color:#94a3b8;cursor:pointer" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''">📚 历史沉淀知识库</div>
+    <div class="tree-divider"></div>
+    <div class="tree-item" style="font-size:11px;color:#0ea5e9" onclick="switchTab('custom')">📋 基地管理办法</div>
+    <div class="tree-item" style="font-size:11px;color:#0ea5e9" onclick="switchTab('custom')">📋 5S管理制度</div>
+  </div>
+
+  <!-- Right: device type cards sorted by completion rate -->
+  <div style="flex:1">
+    <div class="section-title">合膏车间 · 设备类型 <span class="badge">按完成率排序 ↑</span></div>
+    <div class="card-grid">
+      <div class="kb-card warning">
+        <div class="card-icon red">🏗</div><div class="card-name">铸板机</div><div class="card-sub">⚠ 进度严重落后</div>
+        <div class="card-meta"><span>进度 <strong style="color:#ef4444">28%</strong></span><span>质量分 <strong>62</strong></span><span>文档 <strong>5</strong></span></div>
+        <div class="progress-row"><span>设备说明</span><span>5/10</span></div><div class="progress-bar"><div class="progress-fill red" style="width:50%"></div></div>
+        <div class="progress-row"><span>SOP文档</span><span>3/15</span></div><div class="progress-bar"><div class="progress-fill red" style="width:20%"></div></div>
+      </div>
+      <div class="kb-card">
+        <div class="card-icon" style="background:#fef3c7;color:#f59e0b">🏗</div><div class="card-name">铅粉机</div><div class="card-sub">正常推进</div>
+        <div class="card-meta"><span>进度 <strong style="color:#f59e0b">55%</strong></span><span>质量分 <strong>70</strong></span><span>文档 <strong>12</strong></span></div>
+        <div class="progress-row"><span>设备说明</span><span>6/10</span></div><div class="progress-bar"><div class="progress-fill warn" style="width:60%"></div></div>
+        <div class="progress-row"><span>SOP文档</span><span>10/15</span></div><div class="progress-bar"><div class="progress-fill warn" style="width:67%"></div></div>
+      </div>
+      <div class="kb-card">
+        <div class="card-icon" style="background:#fef3c7;color:#f59e0b">🏗</div><div class="card-name">固化炉</div><div class="card-sub">正常推进</div>
+        <div class="card-meta"><span>进度 <strong style="color:#f59e0b">60%</strong></span><span>质量分 <strong>72</strong></span><span>文档 <strong>9</strong></span></div>
+        <div class="progress-row"><span>设备说明</span><span>7/10</span></div><div class="progress-bar"><div class="progress-fill warn" style="width:70%"></div></div>
+        <div class="progress-row"><span>SOP文档</span><span>9/15</span></div><div class="progress-bar"><div class="progress-fill warn" style="width:60%"></div></div>
+      </div>
+      <div class="kb-card">
+        <div class="card-icon amber">🏗</div><div class="card-name">合膏机</div><div class="card-sub">更新于 2小时前</div>
+        <div class="card-meta"><span>进度 <strong style="color:#b45309">75%</strong></span><span>质量分 <strong>78</strong></span><span>文档 <strong>15</strong></span></div>
+        <div class="progress-row"><span>设备说明</span><span>8/10</span></div><div class="progress-bar"><div class="progress-fill amber" style="width:80%"></div></div>
+        <div class="progress-row"><span>SOP文档</span><span>12/15</span></div><div class="progress-bar"><div class="progress-fill amber" style="width:80%"></div></div>
+      </div>
+      <div class="kb-card">
+        <div class="card-icon green">🏗</div><div class="card-name">涂板机</div><div class="card-sub">接近完成</div>
+        <div class="card-meta"><span>进度 <strong style="color:#16a34a">90%</strong></span><span>质量分 <strong>85</strong></span><span>文档 <strong>20</strong></span></div>
+        <div class="progress-row"><span>设备说明</span><span>9/10</span></div><div class="progress-bar"><div class="progress-fill green" style="width:90%"></div></div>
+        <div class="progress-row"><span>SOP文档</span><span>15/17</span></div><div class="progress-bar"><div class="progress-fill green" style="width:88%"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ========== TAB 4: 合规性知识库 ========== -->
+<div id="panel-compliance" class="panel">
+
+<div class="scenario-label">合规性知识库 — 复用现有 KB → 收集计划 → 收集项 结构，前端差异化展示有效期/盖章/签名</div>
+
+<div class="breadcrumb">
+  <span class="node" onclick="switchTab('base')">🏭 江西基地</span><span class="sep">›</span>
+  <span class="node current">🛡️ 合规性知识库</span>
+  <span style="margin-left:auto;font-size:10px;background:#eff6ff;color:#3b82f6;padding:2px 8px;border-radius:10px">kb_type=compliance</span>
+</div>
+
+<!-- Architecture mapping hint -->
+<div class="tip" style="margin-bottom:12px">
+  <strong>🏗️ 架构说明：</strong> 合规性知识库底层完全复用标准结构 ——
+  <code>KnowledgeBase(kb_type=compliance)</code> →
+  <code>CollectionPlan(安环合规文档采集)</code> →
+  <code>PlanItem × 13(安全生产许可证、排污许可证...)</code> →
+  <code>Document/Version(+合规字段)</code><br>
+  仅前端展示层做了差异化：用有效期卡片代替通用进度条，每个 PlanItem 展示为一张合规状态卡片。
+</div>
+
+<div class="stats-bar">
+  <div class="stat-card"><div class="s-label">收集进度</div><div class="s-value amber">77%</div><div class="s-bar"><div class="s-bar-fill blue" style="width:77%"></div></div><div style="font-size:10px;color:#94a3b8;margin-top:2px">10/13 项已完成</div></div>
+  <div class="stat-card"><div class="s-label">质量分</div><div class="s-value">72</div><div style="font-size:10px;color:#94a3b8;margin-top:2px">AI综合评分均值</div></div>
+  <div class="stat-card"><div class="s-label">有效文档</div><div class="s-value green">10</div><div style="font-size:10px;color:#94a3b8;margin-top:2px">未过期</div></div>
+  <div class="stat-card"><div class="s-label">即将过期</div><div class="s-value" style="color:#f59e0b">1</div><div style="font-size:10px;color:#f59e0b;margin-top:2px">30天内</div></div>
+  <div class="stat-card"><div class="s-label">已过期/缺失</div><div class="s-value red">2</div><div style="font-size:10px;color:#94a3b8;margin-top:2px">0分</div></div>
+</div>
+
+<div class="section-title">收集项与合规状态 <span class="badge">计划: 安环合规文档采集 · 13个收集项</span></div>
+
+<!-- 已识别有效期 + 盖章签名完整 → AI 正常评分 -->
+<div class="compliance-item">
+  <div class="ci-status valid">✓</div>
+  <div class="ci-info">
+    <div class="ci-name">安全生产许可证</div>
+    <div class="ci-dates">🤖 AI识别: 2025-01-15 → <strong>2027-01-14</strong> · 剩余 203 天</div>
+    <div style="margin-top:4px">
+      <span class="tag green">🤖 已盖章</span><span class="tag green">🤖 已签名</span><span class="tag blue">已上传 2个版本</span>
+    </div>
+    <div style="font-size:11px;color:#64748b;margin-top:2px">AI审核：未过期+盖章签名完整 → 正常按关联性/质量评分</div>
+  </div>
+  <div class="ci-score"><div class="ci-score-val valid-color">85</div><div style="font-size:10px;color:#94a3b8">AI综合评分</div></div>
+</div>
+
+<!-- AI未识别到有效期 → 红字警告，等待人工 -->
+<div class="compliance-item" style="border-color:#fecaca;background:#fffbfb">
+  <div class="ci-status" style="background:#fef2f2;color:#ef4444">⚠</div>
+  <div class="ci-info">
+    <div class="ci-name">排污许可证</div>
+    <div class="ci-dates"><span style="color:#ef4444;font-weight:600">⚠ 未识别到有效期，请手动填写</span></div>
+    <div style="margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span><input type="date" placeholder="起始日期" style="padding:3px 6px;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;width:120px"> → <input type="date" placeholder="截止日期" style="padding:3px 6px;border:1px solid #fecaca;border-radius:4px;font-size:11px;width:120px"></span>
+      <span style="padding:3px 10px;background:#b45309;color:#fff;border-radius:4px;font-size:11px;cursor:pointer">🔄 重新审核</span>
+    </div>
+    <div style="margin-top:4px">
+      <span class="tag green">🤖 已盖章</span><span class="tag amber">🤖 签名待确认</span>
+      <span class="tag red">⚠ 待人工填写有效期</span>
+    </div>
+    <div style="font-size:11px;color:#ef4444;margin-top:2px">状态: compliance_date_missing — AI审核暂不评分，填写有效期后点击「重新审核」</div>
+  </div>
+  <div class="ci-score"><div class="ci-score-val" style="color:#94a3b8">—</div><div style="font-size:10px;color:#94a3b8">待填写</div></div>
+</div>
+
+<!-- 即将过期 → AI 审核时告知剩余天数，酌情评分 -->
+<div class="compliance-item">
+  <div class="ci-status expiring">⏰</div>
+  <div class="ci-info">
+    <div class="ci-name">消防验收意见书</div>
+    <div class="ci-dates">🤖 AI识别: 2024-10-01 → <strong>2026-07-20</strong> · <span style="color:#f59e0b;font-weight:600">剩余 24 天</span></div>
+    <div style="margin-top:4px"><span class="tag green">🤖 已盖章</span><span class="tag amber">🤖 签名待确认（AI置信度低）</span></div>
+    <div style="font-size:11px;color:#64748b;margin-top:2px">AI审核：未过期但缺签名 → 质量分酌情扣减 10 分</div>
+  </div>
+  <div class="ci-score"><div class="ci-score-val expiring-color">68</div><div style="font-size:10px;color:#94a3b8">扣减后得分</div></div>
+</div>
+
+<!-- 已过期 → 直接0分 -->
+<div class="compliance-item expired">
+  <div class="ci-status expired-icon">✗</div>
+  <div class="ci-info">
+    <div class="ci-name">特种设备使用登记证</div>
+    <div class="ci-dates">🤖 AI识别: 2023-05-01 → <strong>2026-02-28</strong> · <span style="color:#ef4444;font-weight:600">已过期 117 天</span></div>
+    <div style="margin-top:4px"><span class="tag green">🤖 已盖章</span><span class="tag red">缺失最新版本</span></div>
+    <div style="font-size:11px;color:#ef4444;margin-top:2px">AI审核：已过期 → 关联性=0 质量=0（不评估内容）</div>
+  </div>
+  <div class="ci-score"><div class="ci-score-val expired-color">0</div><div style="font-size:10px;color:#ef4444">已过期</div></div>
+</div>
+
+<div class="compliance-item expired">
+  <div class="ci-status expired-icon">✗</div>
+  <div class="ci-info">
+    <div class="ci-name">环境应急预案备案表</div>
+    <div class="ci-dates">有效期: 2022-08-15 → <strong>2025-08-14</strong> · <span style="color:#ef4444;font-weight:600">已过期 315 天</span></div>
+    <div style="margin-top:4px"><span class="tag red">缺盖章</span><span class="tag gray">未签名</span></div>
+  </div>
+  <div class="ci-score"><div class="ci-score-val expired-color">0</div></div>
+</div>
+
+<div class="tip" style="margin-top:14px">
+  <strong>🛡️ 合规性 AI 审核流程（集成在现有审核流中）：</strong><br>
+  <strong>1.</strong> 上传文档 → <strong>视觉模型</strong>（qwen-vl）自动检测：有效期起止日、公章、手写签名<br>
+  <strong>2.</strong> 检测结果作为 <strong>AI审核上下文</strong> 传入 DeepSeek，由 AI 综合评分：<br>
+  &nbsp;&nbsp;&nbsp;• 已过期 → <code>关联性=0 质量=0</code><br>
+  &nbsp;&nbsp;&nbsp;• 未过期+盖章签名完整 → 正常按关联性/质量评分<br>
+  &nbsp;&nbsp;&nbsp;• 未过期+缺盖章或缺签名 → 质量分酌情扣 5–15 分<br>
+  <strong>3.</strong> 视觉模型<strong>未识别到有效期</strong> → 红字警告「⚠ 未识别到有效期，请手动填写」→ AI 暂不评分<br>
+  <strong>4.</strong> 人工审批可修改所有 AI 识别结果 → 提交后重新触发评分
+</div>
+</div>
+
+
+<!-- ========== TAB 5: 自定义文档 ========== -->
+<div id="panel-custom" class="panel">
+
+<div class="scenario-label">自定义文档 — 知识库详情页第三个 Tab，自由创建和管理</div>
+
+<div class="breadcrumb">
+  <span class="node" onclick="switchTab('base')">🏭 江西基地</span><span class="sep">›</span>
+  <span class="node" onclick="switchTab('device')">📁 合膏车间</span><span class="sep">›</span>
+  <span class="node" onclick="switchTab('device')">🏗 合膏机</span><span class="sep">›</span>
+  <span class="node current">📝 自定义文档</span>
+</div>
+
+<div class="tip" style="margin-bottom:14px">
+  <strong>📝 自定义文档说明：</strong> 自动创建的知识库沿用标准框架。在此 Tab 下可<strong>手动创建额外的收集计划</strong>（<code>is_custom=true</code>），自由增删。每个收集计划下可自由创建收集项并上传文档。所有自定义项<strong>必须关联到一个收集计划</strong>，独立评分，不参与自动计划的进度计算。
+</div>
+
+<div class="flex-row" style="justify-content:space-between;margin-bottom:12px">
+  <div class="section-title" style="margin-bottom:0">自定义收集计划与收集项</div>
+  <div style="display:flex;gap:6px">
+    <span class="tag blue" style="cursor:pointer;padding:6px 14px;font-size:12px">+ 新建收集计划</span>
+  </div>
+</div>
+
+<!-- Custom Plan 1 with items -->
+<div style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:10px;overflow:hidden">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:14px">📋</span>
+      <span style="font-weight:600;font-size:13px">临时审核文档收集</span>
+      <span class="tag amber">自定义计划</span>
+      <span style="font-size:11px;color:#94a3b8">创建于 2026-05-01 · 进度 2/3 · 得分 86</span>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span style="font-size:11px;color:#b45309;cursor:pointer;padding:3px 8px">+ 收集项</span>
+      <span style="font-size:11px;color:#64748b;cursor:pointer">✏️ 编辑</span>
+      <span style="font-size:11px;color:#ef4444;cursor:pointer">🗑️ 删除</span>
+    </div>
+  </div>
+  <div style="padding:8px 16px">
+    <div class="custom-item" style="border:none;margin:0;padding:8px 0">
+      <div class="ci-icon">📄</div>
+      <div class="ci-info">
+        <div class="ci-name">供应商资质审核报告</div>
+        <div class="ci-meta">优先级: 高 · 截止: 2026-07-15</div>
+        <div style="margin-top:2px"><span class="tag green">已完成</span><span class="tag blue">1个版本</span> <span style="font-size:11px;color:#94a3b8">得分: 82</span></div>
+      </div>
+      <div style="display:flex;gap:6px"><span style="font-size:11px;color:#64748b;cursor:pointer">✏️</span><span style="font-size:11px;color:#ef4444;cursor:pointer">🗑️</span></div>
+    </div>
+    <div class="custom-item" style="border:none;margin:0;padding:8px 0">
+      <div class="ci-icon">📄</div>
+      <div class="ci-info">
+        <div class="ci-name">第三方检测机构联系清单</div>
+        <div class="ci-meta">优先级: 低</div>
+        <div style="margin-top:2px"><span class="tag green">已完成</span><span class="tag blue">3个版本</span> <span style="font-size:11px;color:#94a3b8">得分: 90</span></div>
+      </div>
+      <div style="display:flex;gap:6px"><span style="font-size:11px;color:#64748b;cursor:pointer">✏️</span><span style="font-size:11px;color:#ef4444;cursor:pointer">🗑️</span></div>
+    </div>
+    <div class="custom-item" style="border:none;margin:0;padding:8px 0">
+      <div class="ci-icon">📄</div>
+      <div class="ci-info">
+        <div class="ci-name">设备搬迁验收记录</div>
+        <div class="ci-meta">优先级: 一般</div>
+        <div style="margin-top:2px"><span class="tag amber">待完善</span><span class="tag gray">未上传</span></div>
+      </div>
+      <div style="display:flex;gap:6px"><span style="font-size:11px;color:#64748b;cursor:pointer">✏️</span><span style="font-size:11px;color:#ef4444;cursor:pointer">🗑️</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="tip" style="margin-top:14px">
+  <strong>💡 自定义能力边界：</strong><br>
+  • 自动创建的 <strong>知识库</strong>（设备说明/SOP/历史沉淀）→ 🚫 不可删除<br>
+  • 自动创建的 <strong>收集计划</strong>（设备说明采集/SOP采集）→ 🚫 不可删除<br>
+  • 自动创建的 <strong>收集项</strong> → 🚫 不可删除，只能标记「不适用」<br>
+  • 手动创建的 <strong>收集计划</strong> / <strong>收集项</strong> → ✅ 可自由增删<br>
+  • 自定义收集项 <strong>必须</strong> 关联到一个收集计划，不支持"未归类"收集项
+</div>
+</div>
+
+<!-- ========== TAB 6: 文档类别配置（管理员） ========== -->
+<div id="panel-admin" class="panel">
+
+<div class="scenario-label">全局文档类别配置 — 从知识库首页「📋 管理文档类别」按钮进入，独立全屏页面</div>
+
+<div class="breadcrumb">
+  <span class="node" onclick="switchTab('base')">🏭 知识库管理</span><span class="sep">›</span>
+  <span class="node current">📋 文档类别配置</span>
+  <span style="margin-left:auto;font-size:10px;color:#94a3b8">管理员功能 · 修改后需手动同步到知识库</span>
+</div>
+
+<div class="flex-row" style="justify-content:space-between;margin-bottom:14px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="font-size:14px;font-weight:600">全局文档类别体系</div>
+    <span class="tag blue" style="cursor:pointer;padding:5px 12px;font-size:11px">+ 新建</span>
+  </div>
+  <div>
+    <span class="tag amber" style="cursor:pointer;padding:6px 16px;font-size:12px;font-weight:600">🔄 同步到所有知识库</span>
+  </div>
+</div>
+
+<!-- Tree + Detail split -->
+<div class="split-layout" style="min-height:460px">
+  <!-- Left: tree -->
+  <div class="tree-panel" style="width:280px">
+    <div class="tree-title" style="display:flex;justify-content:space-between;align-items:center">
+      类别树（共70个叶子节点）
+      <span style="font-size:10px;color:#94a3b8;cursor:pointer" onclick="alert('全部展开/折叠')" title="全部展开/折叠">全部展开</span>
+    </div>
+    <div class="tree-item active" style="font-weight:600">📐 设备说明文档 <span style="margin-left:auto;font-size:10px;color:#94a3b8">38项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▾ 📄 图纸类 <span style="margin-left:auto;font-size:10px;color:#94a3b8">12项</span></div>
+    <div class="tree-item l3" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'"><span class="dot green"></span> 设备总装配图</div>
+    <div class="tree-item l3" style="background:#fef3c7" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'"><span class="dot green"></span> 部件装配图</div>
+    <div class="tree-item l3" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'"><span class="dot green"></span> 关键零部件图</div>
+    <div class="tree-item l3" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'"><span class="dot green"></span> 工装夹具图纸</div>
+    <div class="tree-item l3" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'"><span class="dot green"></span> 电气原理图</div>
+    <div class="tree-item l3" style="color:#94a3b8" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">... 更多</div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 手册类 <span style="margin-left:auto;font-size:10px;color:#94a3b8">10项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 程序与参数类 <span style="margin-left:auto;font-size:10px;color:#94a3b8">6项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 备件清单 <span style="margin-left:auto;font-size:10px;color:#94a3b8">5项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 通信接口 <span style="margin-left:auto;font-size:10px;color:#94a3b8">5项</span></div>
+    <div class="tree-divider"></div>
+    <div class="tree-item" style="font-weight:600">📋 设备SOP文档 <span style="margin-left:auto;font-size:10px;color:#94a3b8">19项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 人员资质与培训 <span style="margin-left:auto;font-size:10px;color:#94a3b8">2项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 设备操作与维护 <span style="margin-left:auto;font-size:10px;color:#94a3b8">9项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 物料与检验 <span style="margin-left:auto;font-size:10px;color:#94a3b8">6项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 环境与安全 <span style="margin-left:auto;font-size:10px;color:#94a3b8">2项</span></div>
+    <div class="tree-divider"></div>
+    <div class="tree-item" style="font-weight:600">🛡️ 合规性文档 <span style="margin-left:auto;font-size:10px;color:#94a3b8">13项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 许可与证照 <span style="margin-left:auto;font-size:10px;color:#94a3b8">4项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 应急管理 <span style="margin-left:auto;font-size:10px;color:#94a3b8">3项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 人员资质 <span style="margin-left:auto;font-size:10px;color:#94a3b8">2项</span></div>
+    <div class="tree-item l2" onclick="this.style.background='#fef3c7'; this.style.fontWeight='600'">▸ 📄 检测报告 <span style="margin-left:auto;font-size:10px;color:#94a3b8">4项</span></div>
+  </div>
+
+  <!-- Right: detail panel -->
+  <div style="flex:1;background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:18px">
+    <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;margin-bottom:4px">选中类别详情</div>
+    <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:4px">部件装配图</div>
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+      <span class="tag amber">📐 设备说明文档</span>
+      <span class="tag gray">📄 图纸类</span>
+      <span class="tag green">叶子节点（生成 PlanItem）</span>
+      <span class="tag green">启用</span>
+    </div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;color:#64748b;font-weight:600;margin-bottom:4px">收集要求（requirement_desc）</div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px;font-size:12px;color:#334155;line-height:1.6">
+        各独立功能模块的装配关系图（如主轴箱、工作台、刀库、磨头架、冷却过滤系统等）。需包含完整的装配尺寸链、配合公差、紧固力矩要求、装配顺序说明。
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;color:#64748b;font-weight:600;margin-bottom:4px">类别属性</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+        <div><span style="color:#94a3b8">所属体系：</span>设备说明文档 (device_doc)</div>
+        <div><span style="color:#94a3b8">层级：</span>三级（叶子节点）</div>
+        <div><span style="color:#94a3b8">排序：</span>5</div>
+        <div><span style="color:#94a3b8">版本：</span>V1 · 创建于 2026-06-26</div>
+        <div><span style="color:#94a3b8">已同步KB数：</span>13</div>
+        <div><span style="color:#94a3b8">状态：</span><span style="color:#16a34a">启用中</span></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;padding-top:12px;border-top:1px solid #e2e8f0">
+      <span class="tag blue" style="cursor:pointer;padding:6px 16px;font-size:12px">✏️ 编辑</span>
+      <span class="tag" style="cursor:pointer;padding:6px 16px;font-size:12px;background:#fef2f2;color:#ef4444">🗑️ 停用</span>
+    </div>
+  </div>
+</div>
+
+<div class="tip" style="margin-top:14px">
+  <strong>⚙️ 使用说明：</strong><br>
+  • <strong>入口：</strong>知识库管理首页 → 「📋 管理文档类别」按钮（在「🔄 同步设备类型」右边）→ 跳转到此页面<br>
+  • <strong>左侧树：</strong>按体系分组，展开/折叠，选中后右侧显示详情<br>
+  • <strong>编辑：</strong>修改名称和收集要求，叶子节点生成 PlanItem，非叶子节点仅用于前端分类展示<br>
+  • <strong>停用：</strong>标记 <code>is_active=false</code>（软删除），已同步到 KB 的类别不受影响<br>
+  • <strong>新建：</strong>选择所属体系 + 父级类别，叶子节点可独立创建<br>
+  • <strong>🔄 同步到所有知识库：</strong>弹窗预览变更（新增 N 个类别）→ 确认后增量同步到所有活跃 KB
+</div>
+</div>
+
+</div><!-- /content -->
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  var tabEl = document.querySelector('.tab[onclick*="'+name+'"]');
+  if (tabEl) tabEl.classList.add('active');
+  var panelEl = document.getElementById('panel-'+name);
+  if (panelEl) panelEl.classList.add('active');
+}
+</script>
+</body>
+</html>

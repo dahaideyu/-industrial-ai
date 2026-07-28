@@ -1,0 +1,42 @@
+# 永旭环境覆盖配置
+# 用法: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.yongxu.yml --profile local-db --profile mqtt up -d
+
+services:
+  industrial-ai:
+    container_name: industrial-ai-yongxu
+    env_file:
+      - ./.env.prod.yongxu
+    ports:
+      - "9300:80"
+
+  # 永旭环境启用内部 PostgreSQL（通过 --profile local-db 激活）
+  postgresql:
+    environment:
+      POSTGRES_DB: knowledge_base
+      POSTGRES_USER: zxzz
+      POSTGRES_PASSWORD: Admin@Zxzz
+
+  knb-celery-worker:
+    env_file:
+      - ./.env.prod.yongxu
+
+  repair-suggestion:
+    env_file:
+      - ./.env.prod.yongxu
+
+  mqtt-etl:
+    env_file:
+      - ./.env.prod.yongxu
+
+  # Redis 端口覆盖（避免与服务器上已有的 redis 冲突）
+  redis:
+    container_name: redis-yongxu
+    ports:
+      - "16379:6379"
+
+  # MinIO 端口覆盖（避免与服务器上已有的 minio 冲突）
+  minio:
+    container_name: minio-yongxu
+    ports: !override
+      - "9002:9000"
+      - "9003:9001"

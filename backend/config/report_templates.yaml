@@ -1,0 +1,405 @@
+# 报告类型到模板列表的配置
+# 支持一份配置生成多份报告
+#
+# 字段说明:
+#   template:           提示词模板文件名
+#   output_name:        报告输出名称
+#   use_raw_data:          是否注入接口原始数据（仅第1份报告需要）
+#   use_ragflow:           是否使用知识库（仅第3份报告需要）
+#   context_from_index:    使用前序第 N 份报告作为上下文（0=第1份, 1=第2份）
+#   use_historical_context: 是否加载历史报告用于趋势对比（仅第2份报告需要）
+#
+# 报告链路:
+#   第1份: 原始数据 → 基础报告
+#   第2份: 第1份报告 + 历史报告 → 趋势分析
+#   第3份: 第2份报告 + 知识库   → 改善建议
+
+report_mapping:
+
+  # ========================================
+  # 精益早会日报
+  # ========================================
+  leanMorningDailyReport:
+    name: "精益早会日报"
+    templates:
+      - template: "lean_morning_daily_report01.txt"
+        output_name: "基础日报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "lean_morning_daily_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "lean_morning_daily_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 工厂级早会日报
+  # ========================================
+  factoryMorningDailyReport:
+    name: "工厂级早会日报"
+    templates:
+      - template: "factory_morning_daily_report01.txt"
+        output_name: "工厂早会汇总"
+        use_raw_data: false
+        use_ragflow: false
+        use_all_workshop_reports: true
+
+      - template: "factory_morning_daily_report02.txt"
+        output_name: "工厂趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "factory_morning_daily_report03.txt"
+        output_name: "工厂改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 质量概览日报
+  # ========================================
+  qualityDailyReport:
+    name: "质量概览日报"
+    templates:
+      - template: "quality_daily_report01.txt"
+        output_name: "基础日报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "quality_daily_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "quality_daily_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 质量概览周报
+  # ========================================
+  qualityWeeklyReport:
+    name: "质量概览周报"
+    templates:
+      - template: "quality_weekly_report01.txt"
+        output_name: "基础周报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "quality_weekly_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "quality_weekly_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 精益质量周报
+  # ========================================
+  leanQualityWeekReport:
+    name: "精益质量周报"
+    templates:
+      - template: "lean_quality_weekly_report01.txt"
+        output_name: "基础周报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "lean_quality_weekly_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "lean_quality_weekly_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 质量概览月报
+  # ========================================
+  qualityMonthlyReport:
+    name: "质量概览月报"
+    templates:
+      - template: "quality_monthly_report01.txt"
+        output_name: "基础月报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "quality_monthly_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "quality_monthly_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 设备效率报告（动态映射）
+  # 根据 periodType 和 workshopId 动态选择模板
+  # periodType: day/week/month
+  # workshopId: 有值=车间级，无值/null=工厂级
+  # ========================================
+  deviceEfficiencyReport:
+    name: "设备效率报告"
+    dynamic: true
+    # 条件映射规则
+    conditions:
+      # 根据 periodType 选择周期
+      - field: "periodType"
+        mapping:
+          day:
+            # 根据 workshopId 选择维度
+            conditions:
+              - field: "workshopId"
+                mapping:
+                  null: "deviceEfficiencyFactoryDailyReport"
+                  default: "deviceEfficiencyWorkshopDailyReport"
+          week:
+            conditions:
+              - field: "workshopId"
+                mapping:
+                  null: "deviceEfficiencyFactoryWeeklyReport"
+                  default: "deviceEfficiencyWorkshopWeeklyReport"
+          month:
+            conditions:
+              - field: "workshopId"
+                mapping:
+                  null: "deviceEfficiencyFactoryMonthlyReport"
+                  default: "deviceEfficiencyWorkshopMonthlyReport"
+    # 默认回退（当条件不匹配时）
+    default: "deviceEfficiencyFactoryDailyReport"
+
+  # ========================================
+  # 设备效率报告 - 工厂级日报
+  # ========================================
+  deviceEfficiencyFactoryDailyReport:
+    name: "设备效率工厂日报"
+    templates:
+      - template: "device_factory_daily_report01.txt"
+        output_name: "基础日报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "device_factory_daily_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "device_factory_daily_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 设备效率报告 - 工厂级周报
+  # ========================================
+  deviceEfficiencyFactoryWeeklyReport:
+    name: "设备效率工厂周报"
+    templates:
+      - template: "device_factory_weekly_report01.txt"
+        output_name: "基础周报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "device_factory_weekly_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "device_factory_weekly_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 设备效率报告 - 工厂级月报
+  # ========================================
+  deviceEfficiencyFactoryMonthlyReport:
+    name: "设备效率工厂月报"
+    templates:
+      - template: "device_factory_monthly_report01.txt"
+        output_name: "基础月报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "device_factory_monthly_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "device_factory_monthly_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 设备效率报告 - 车间级日报
+  # ========================================
+  deviceEfficiencyWorkshopDailyReport:
+    name: "设备效率车间日报"
+    templates:
+      - template: "device_workshop_daily_report01.txt"
+        output_name: "基础日报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "device_workshop_daily_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "device_workshop_daily_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 设备效率报告 - 车间级周报
+  # ========================================
+  deviceEfficiencyWorkshopWeeklyReport:
+    name: "设备效率车间周报"
+    templates:
+      - template: "device_workshop_weekly_report01.txt"
+        output_name: "基础周报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "device_workshop_weekly_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "device_workshop_weekly_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 设备效率报告 - 车间级月报
+  # ========================================
+  deviceEfficiencyWorkshopMonthlyReport:
+    name: "设备效率车间月报"
+    templates:
+      - template: "device_workshop_monthly_report01.txt"
+        output_name: "基础月报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "device_workshop_monthly_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "device_workshop_monthly_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 设备运维报告（动态映射）
+  # 根据 periodType 选择周报/月报
+  # periodType: week/month
+  # ========================================
+  deviceMaintenanceReport:
+    name: "设备运维报告"
+    dynamic: true
+    conditions:
+      - field: "periodType"
+        mapping:
+          week: "deviceMaintenanceWeeklyReport"
+          month: "deviceMaintenanceMonthlyReport"
+    default: "deviceMaintenanceWeeklyReport"
+
+  # ========================================
+  # 设备运维周报
+  # ========================================
+  deviceMaintenanceWeeklyReport:
+    name: "设备运维周报"
+    templates:
+      - template: "device_maintenance_weekly_report01.txt"
+        output_name: "基础周报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "device_maintenance_weekly_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "device_maintenance_weekly_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1
+
+  # ========================================
+  # 设备运维月报
+  # ========================================
+  deviceMaintenanceMonthlyReport:
+    name: "设备运维月报"
+    templates:
+      - template: "device_maintenance_monthly_report01.txt"
+        output_name: "基础月报"
+        use_raw_data: true
+        use_ragflow: false
+
+      - template: "device_maintenance_monthly_report02.txt"
+        output_name: "趋势分析"
+        use_raw_data: false
+        use_ragflow: false
+        context_from_index: 0
+        use_historical_context: true
+
+      - template: "device_maintenance_monthly_report03.txt"
+        output_name: "改善建议"
+        use_raw_data: false
+        use_ragflow: true
+        context_from_index: 1

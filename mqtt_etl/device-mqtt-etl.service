@@ -1,0 +1,18 @@
+[Unit]
+Description=Device MQTT ETL Service
+After=network.target timescaledb.service
+
+[Service]
+Type=simple
+User=zxzz
+WorkingDirectory=/home/zxzz/etl/device_mqtt_etl
+Environment="PATH=/home/zxzz/etl/device_mqtt_etl/.venv/bin"
+ExecStart=/home/zxzz/etl/device_mqtt_etl/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

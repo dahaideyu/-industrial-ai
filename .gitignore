@@ -1,0 +1,106 @@
+# ========================================
+# Python
+# ========================================
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+pc/
+test
+# ========================================
+# 环境变量（含密钥，不提交）
+# ========================================
+.env
+.env.*
+!deploy/docker/.env.example
+!deploy/docker/.env.prod
+!deploy/docker/.env.test
+!deploy/docker/.env.prod.shandong
+!deploy/docker/.env.prod.jiangxi
+!deploy/docker/.env.prod.changxing
+
+# ========================================
+# 运行时数据和日志
+# ========================================
+data/
+logs/
+*.log
+analysis_output/
+
+# ========================================
+# IDE 和开发工具
+# ========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+
+
+# ========================================
+# Node.js
+# ========================================
+node_modules/
+dist/
+build/
+
+# ========================================
+# 杂项
+# ========================================
+stitch.txt
+task.md
+uv.lock
+*.xlsx
+*.doc
+*.docx
+
+# ========================================
+# 加密的提示词（含敏感数据，不提交）
+# ========================================
+backend/prompts_encrypted.json
+
+# 构建产物
+*.tar
+build_key.txt
+
+# ========================================
+# SQL-QA 子项目
+# ========================================
+# 中文向量化嵌入模型
+backend/services/agentic_qa/bge-small-zh-v1.5/
+
+# 数据目录
+backend/data/agentic_qa/
+
+# 文档
+docs/superpowers/
+docs/agentic-qa/superpowers/
+
+# 日志
+logs/sql-qa/
+
+# uv lock
+sql-qa-uv.lock
+
+# claude / 本地 AI 工具配置（不应进仓库）
+.claude
+.wolf
+.superpowers/
+.codegraph/
+.codex/
+CLAUDE.md
+
+# ========================================
+# 特征提取产物（可由 backend/tools/extract_device_features.py 重新生成）
+# ========================================
+*.parquet
+features_output/
+.wolf/hooks/_session.json
+
+# ========================================
+# 本地数据库备份（体积大，不进仓库）
+# ========================================
+docs/02_small_tables.sql
+docs/03_hypertables_1d.sql
+docs/mqttetl.jpg

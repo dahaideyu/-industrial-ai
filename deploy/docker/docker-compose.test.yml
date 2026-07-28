@@ -1,0 +1,59 @@
+# 测试环境覆盖配置
+# 用法: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.test.yml up -d
+# 测试服务器资源有限（2核），降低各服务资源限制
+
+services:
+  industrial-ai:
+    build:
+      args:
+        COMPILE_SOURCE: "false"
+    container_name: industrial-ai-test
+    env_file:
+      - ./.env.test
+    ports:
+      - "9300:80"
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
+  minio:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  knb-libreoffice:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  knb-celery-worker:
+    build:
+      args:
+        COMPILE_SOURCE: "false"
+    env_file:
+      - ./.env.test
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  mqtt-etl:
+    build:
+      args:
+        COMPILE_SOURCE: "false"
+    env_file:
+      - ./.env.test

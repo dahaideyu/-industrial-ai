@@ -1,0 +1,85 @@
+- generic [ref=e22]:
+  - banner [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - link "AI 数智资产管理系统" [ref=e26] [cursor=pointer]:
+          - /url: /dashboard
+          - generic [ref=e27]: AI
+          - generic [ref=e28]: 数智资产管理系统
+        - navigation [ref=e29]:
+          - button "AI 工作流 ▼" [ref=e31] [cursor=pointer]:
+            - text: AI 工作流
+            - generic [ref=e32]: ▼
+          - button "诊断与建议 ▼" [ref=e34] [cursor=pointer]:
+            - text: 诊断与建议
+            - generic [ref=e35]: ▼
+          - button "数据与任务 ▼" [ref=e37] [cursor=pointer]:
+            - text: 数据与任务
+            - generic [ref=e38]: ▼
+          - button "AI 智能问答 ▼" [ref=e40] [cursor=pointer]:
+            - text: AI 智能问答
+            - generic [ref=e41]: ▼
+          - button "系统管理 ▼" [ref=e43] [cursor=pointer]:
+            - text: 系统管理
+            - generic [ref=e44]: ▼
+      - generic [ref=e45]:
+        - link "生成 AI 报告 +" [ref=e46] [cursor=pointer]:
+          - /url: /report
+          - generic [ref=e47]: 生成 AI 报告
+          - generic [ref=e48]: +
+        - generic [ref=e51]: AI 在线
+        - generic [ref=e52]:
+          - generic [ref=e53]: 用
+          - generic [ref=e54]:
+            - paragraph [ref=e55]: 用户
+            - paragraph [ref=e56]: 已登录
+          - button "退出" [ref=e57] [cursor=pointer]
+  - main [ref=e58]:
+    - generic [ref=e200]:
+      - generic [ref=e202]:
+        - button "+ 新建会话" [ref=e204] [cursor=pointer]
+        - generic [ref=e205]:
+          - generic [ref=e206]: 最近会话
+          - generic [ref=e394] [cursor=pointer]:
+            - generic [ref=e395]: 新会话
+            - generic [ref=e396]: 今天 03:28
+            - button "✕" [ref=e397]
+          - generic [ref=e207] [cursor=pointer]:
+            - generic [ref=e208]: 新会话
+            - generic [ref=e209]: 今天 02:38
+            - button "✕" [ref=e210]
+          - generic [ref=e211] [cursor=pointer]:
+            - generic [ref=e212]: 新会话
+            - generic [ref=e213]: 今天 02:01
+            - button "✕" [ref=e214]
+          - generic [ref=e215] [cursor=pointer]:
+            - generic [ref=e216]: 新会话
+            - generic [ref=e217]: 今天 00:45
+            - button "✕" [ref=e218]
+        - generic [ref=e219] [cursor=pointer]: 🔄 刷新问答记忆
+      - generic [ref=e220]:
+        - generic [ref=e221]:
+          - generic [ref=e401]:
+            - text: 放泡沫机电气原理图
+            - generic [ref=e402]: 11:28
+          - generic [ref=e404]:
+            - generic [ref=e405]: 🤖
+            - generic [ref=e406]:
+              - generic [ref=e408]: 正在生成中▊
+              - generic [ref=e409]: 11:28
+          - generic [ref=e410]: 🤔 AI 思考中...
+        - generic [ref=e271]:
+          - textbox "💬 输入你的问题..." [disabled] [ref=e272]: 放泡沫机电气原理图
+          - button "发送" [disabled] [ref=e273]
+      - generic [ref=e275]:
+        - generic [ref=e276]:
+          - generic [ref=e277]: 🔮 AI 匹配的知识库 （上个问题）
+          - generic [ref=e399]: 暂无匹配
+        - generic [ref=e387]:
+          - generic [ref=e388]: 👆 手动选择的知识库 （下个问题）
+          - generic [ref=e390]: 未选择（将使用 AI 自动判断）
+          - button "+ 添加/修改知识库" [ref=e391] [cursor=pointer]
+        - generic [ref=e392]:
+          - text: 💡 手动选择的 KB 会与 AI 自动判断合并，作为
+          - strong [ref=e393]: 下个问题
+          - text: 的检索范围。

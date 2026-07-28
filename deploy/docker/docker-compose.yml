@@ -1,0 +1,301 @@
+# Chaowei Agent — Docker Compose
+# 用法:
+#   开发: docker compose -f deploy/docker/docker-compose.yml up -d
+#   测试: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.test.yml up -d
+#   生产: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.prod.yml up -d
+#   山东: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.shandong.yml up -d
+#   江西: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.jiangxi.yml up -d
+#
+# 依赖服务命名约定（v2026-07 升级）：
+#   - 容器/服务使用通用名称：postgresql / redis / minio
+#   - 旧名 knb-postgresql / knb-redis / knb-minio 仍作为 alias 保留（旧部署可平滑迁移）
+#   - 环境变量：PG_*/REDIS_URL/MINIO_* 为新名；KNB_PG_*/KNB_REDIS_URL/KNB_MINIO_* 兼容
+
+# 显式固定 compose 项目名：部署目录叫 docker（deploy/docker/），不固定的话默认项目名
+# 就是 "docker"，会跟同机其他同目录名的栈（如 /opt/ragflow/docker 的 RAGFlow）落入
+# 同一个项目/网络 —— 导致 compose ps 混栈、down --remove-orphans 误删对方容器、
+# 部署重建 redis 时干扰 RAGFlow 等问题。remote-deploy.sh 里的 COMPOSE_PROJECT_NAME
+# 只对走脚本的部署生效，这里固化后手动 docker compose up 也不会再掉坑。
+name: industrial-ai
+
+services:
+  industrial-ai:
+    # 固定镜像名/tag（不依赖 compose 项目名自动生成的名字）：离线打包时
+    # `docker save/load` 按这个名字操作，`docker compose up` 不加 --build
+    # 也能直接复用 load 进来的镜像，不会因为名字对不上而在服务器上重新构建。
+    # 与 knb-celery-worker/repair-suggestion/mqtt-etl 用同一个 ${IMAGE_NAME}，
+    # 保证四个服务永远指向同一镜像。
+    image: ${IMAGE_NAME:-industrial-ai}:${IMAGE_TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        VITE_ENABLE_SQL_QA: "${ENABLE_SQL_QA:-true}"
+        COMPILE_SOURCE: "${COMPILE_SOURCE:-true}"
+    container_name: industrial-ai
+    restart: unless-stopped
+    env_file:
+      # 相对 compose 文件所在目录（deploy/docker/）解析 —— 即 deploy/docker/.env，
+      # 与 deploy.bat / remote-deploy.sh 校验的位置一致（仓库根目录没有 .env）
+      - ./.env
+    ports:
+      - "${APP_PORT:-9300}:80"
+    volumes:
+      - ../../logs:/app/logs
+      - ../../data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:80/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ========== 系统级共享服务（知识库 / agentic_qa / device_param 等模块共用）==========
+  # PostgreSQL/TimescaleDB —— 本地开发用容器化数据库（feature/local-timescaledb-docker 新增）。
+  # 生产/测试环境默认仍连外部独立服务器 10.1.2.227（PG_HOST 指向那边），
+  # 此服务默认不随 `docker compose up` 启动，需要本地免隧道开发时显式加 profile：
+  #   docker compose -f deploy/docker/docker-compose.yml --profile local-db up -d postgresql
+  # 所有应用表统一存放于 ${PG_DB:-knowledge_base} 库：
+  # 设备参数/job（24张）+ 知识库（14张）+ AI报告（1张）+ Agentic QA（4张），
+  # 表名/索引/约束零冲突，已验证。应用连接目标库统一由 PG_DB 环境变量控制。
+  # 首次启动（数据卷为空）会自动跑 docker/init-sql/ 下的脚本建表：
+  #   schema-only（CREATE TABLE/INDEX/hypertable 转换），从远程内省导出，不含历史数据。
+  postgresql:
+    image: timescale/timescaledb:2.19.1-pg14
+    container_name: postgresql
+    restart: unless-stopped
+    profiles: ["local-db"]
+    # 外部端口默认 15432 避免与宿主机业务 PostgreSQL (5432) 冲突
+    ports:
+      - "${PG_HOST_PORT:-15432}:5432"
+    environment:
+      POSTGRES_DB: ${PG_DB:-knowledge_base}
+      POSTGRES_USER: ${PG_USER:-zxzz}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-Admin@Zxzz}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-zxzz} -d ${PG_DB:-knowledge_base}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+  # 别名：旧部署兼容（保持原状，knb-celery-worker 已不依赖它）
+  knb-postgresql:
+    image: postgres:15
+    container_name: knb-postgresql
+    restart: unless-stopped
+    profiles: ["legacy"]
+    ports:
+      - "${KNB_PG_HOST_PORT:-15432}:5432"
+    environment:
+      POSTGRES_DB: ${KNB_PG_DB:-knowledge_base}
+      POSTGRES_USER: ${KNB_PG_USER:-zxzz}
+      POSTGRES_PASSWORD: ${KNB_PG_PASSWORD:-Admin@Zxzz}
+    volumes:
+      - knb_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KNB_PG_USER:-zxzz} -d ${KNB_PG_DB:-knowledge_base}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+  # 别名：旧部署兼容
+  knb-redis:
+    image: redis:7-alpine
+    container_name: knb-redis
+    restart: unless-stopped
+    profiles: ["legacy"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO
+  minio:
+    image: minio/minio
+    container_name: minio
+    restart: unless-stopped
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-zxzz}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-Admin@Zxzz}
+      # 覆盖镜像默认的 *_FILE 变量，否则 MinIO 会从文件读取凭据而忽略上述 env
+      MINIO_ROOT_USER_FILE: ""
+      MINIO_ROOT_PASSWORD_FILE: ""
+      MINIO_ACCESS_KEY_FILE: ""
+      MINIO_SECRET_KEY_FILE: ""
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+  # 别名：旧部署兼容
+  knb-minio:
+    image: minio/minio
+    container_name: knb-minio
+    restart: unless-stopped
+    profiles: ["legacy"]
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${KNB_MINIO_ACCESS_KEY:-zxzz}
+      MINIO_ROOT_PASSWORD: ${KNB_MINIO_SECRET_KEY:-Admin123@Zxzz}
+    volumes:
+      - knb_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  knb-libreoffice:
+    image: linuxserver/libreoffice:latest
+    container_name: knb-libreoffice
+    restart: unless-stopped
+    environment:
+      PUID: 1000
+      PGID: 1000
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  knb-celery-worker:
+    image: ${IMAGE_NAME:-industrial-ai}:${IMAGE_TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        COMPILE_SOURCE: "${COMPILE_SOURCE:-true}"
+    container_name: knb-celery-worker
+    restart: unless-stopped
+    env_file:
+      # 相对 compose 文件所在目录（deploy/docker/）解析 —— 即 deploy/docker/.env，
+      # 与 deploy.bat / remote-deploy.sh 校验的位置一致（仓库根目录没有 .env）
+      - ./.env
+    command: >
+      celery -A backend.services.knowledge_management.tasks.celery_app worker
+      -Q kb_convert,kb_extract,kb_review,kb_sync,kb_plc,kb_eval
+      --concurrency=4 --loglevel=info
+    depends_on:
+      # postgresql: 已临时停用（2026-07：改用外部独立 PG 10.1.2.227）
+      # 取消注释下方两行可恢复容器内 PG
+      # postgresql:
+      #   condition: service_healthy
+      redis:
+        condition: service_healthy
+      knb-libreoffice:
+        condition: service_started
+    volumes:
+      - ../../data:/app/data
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+
+  # ========== 维修工单评分服务（独立服务） ==========
+  repair-suggestion:
+    image: ${IMAGE_NAME:-industrial-ai}:${IMAGE_TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        COMPILE_SOURCE: "${COMPILE_SOURCE:-true}"
+    container_name: repair-suggestion
+    restart: unless-stopped
+    env_file:
+      # 相对 compose 文件所在目录（deploy/docker/）解析 —— 即 deploy/docker/.env，
+      # 与 deploy.bat / remote-deploy.sh 校验的位置一致（仓库根目录没有 .env）
+      - ./.env
+    # 模块使用相对导入，需要切换到模块目录启动
+    command: >
+      bash -c "cd /app/backend/modules/repair_suggestion && python -m uvicorn main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "${REPAIR_SUGGESTION_PORT:-8000}:8000"
+    # 环境变量通过 env_file 从各环境配置文件中读取
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # ========== MQTT ETL 服务（可选，通过 profile 控制） ==========
+  mqtt-etl:
+    image: ${IMAGE_NAME:-industrial-ai}:${IMAGE_TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        COMPILE_SOURCE: "${COMPILE_SOURCE:-true}"
+    container_name: mqtt-etl
+    restart: unless-stopped
+    env_file:
+      # 相对 compose 文件所在目录（deploy/docker/）解析 —— 即 deploy/docker/.env，
+      # 与 deploy.bat / remote-deploy.sh 校验的位置一致（仓库根目录没有 .env）
+      - ./.env
+    command: >
+      python /app/mqtt_etl/main.py
+    profiles: ["mqtt"]
+    # postgresql 依赖已去掉：postgresql 在 local-db profile 里，单独 --profile mqtt 启动会因
+    # 依赖服务未启用直接报错；且生产/测试连外部 PG（10.1.2.227）时也不应强制拉起本地库容器。
+    # 本地全容器开发需同时启用两个 profile：--profile mqtt --profile local-db up -d
+    # （mqtt_etl 自带断线重连 + dead_letter 兜底，PG 未就绪时不会丢数据）
+    # depends_on:
+    #   postgresql:
+    #     condition: service_healthy
+    volumes:
+      - ../../data:/app/data
+      - ../../mqtt_etl/dead_letter:/app/mqtt_etl/dead_letter
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+volumes:
+  # 新名（系统级）— 本地开发 TimescaleDB 数据卷（--profile local-db 用）
+  pgdata:
+  minio_data:
+  # 旧名（兼容旧部署，迁移后清理）
+  knb_pgdata:
+  knb_minio_data:

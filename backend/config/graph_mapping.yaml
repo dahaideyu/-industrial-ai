@@ -1,0 +1,105 @@
+# ========== 实体节点映射（从关系表导入） ==========
+nodes:
+  - table: dev_device 
+    label: Device
+    type_key: device
+    label_zh: "设备"
+    id_field: id
+    name_field: name
+    alias_fields: [name]
+    manual_aliases:
+      2: ["制带线", "制带机"]
+      82: ["制带线", "制带机"]
+    filter: "del_flag = 0"
+
+  - table: dev_device_type
+    label: DeviceType
+    type_key: device_type
+    label_zh: "设备类型"
+    id_field: id
+    name_field: name
+    alias_fields: [name]
+    manual_aliases:
+      2: ["制带线"]
+    filter: "del_flag = 0"
+
+  - table: sys_line
+    label: Line
+    type_key: production_line
+    label_zh: "产线"
+    id_field: id
+    name_field: name
+    alias_fields: [name]
+    filter: "del_flag = 0"
+
+  - table: sys_workshop
+    label: Workshop
+    type_key: workshop
+    label_zh: "车间"
+    id_field: id
+    name_field: name
+    alias_fields: [name]
+    filter: "del_flag = 0"
+
+  - table: sys_dept
+    label: Department
+    type_key: department
+    label_zh: "部门"
+    id_field: dept_id
+    name_field: dept_name
+    alias_fields: [dept_name]
+    filter: "del_flag = 0 and dept_id != 100"
+
+# ========== 关系映射 ==========
+# from_table / to_table 对应 nodes 中的 table 字段
+# fk_field: from_table 中指向 to_table 的外键列
+# 源节点用其 id_field 标识，目标节点用其 id_field 标识（均从 nodes 配置查表获取）
+relationships:
+  - from_table: dev_device
+    fk_field: type_id
+    to_table: dev_device_type
+    rel_type: HAS_TYPE
+
+  - from_table: dev_device
+    fk_field: line_id
+    to_table: sys_line
+    rel_type: LOCATED_ON
+
+  - from_table: sys_line
+    fk_field: dept_id
+    to_table: sys_workshop
+    rel_type: BELONGS_TO
+
+  - from_table: sys_workshop
+    fk_field: dept_id
+    to_table: sys_dept
+    rel_type: BELONGS_TO
+
+# ========== 手动添加的额外节点和关系（公司、自定义层级） ==========
+manual_nodes:
+  - label: Company
+    type_key: company
+    label_zh: "公司"
+    id: "100"
+    name: "超威江西"
+    full_name: "超威电源有限公司江西分公司"
+    aliases: ["江西超威", "江西新威"]
+
+manual_relationships:
+  - from_label: Department
+    from_id: 141
+    to_label: Company
+    to_id: 100
+    rel_type: BELONGS_TO
+
+  - from_label: Department
+    from_id: 142
+    to_label: Department
+    to_id: 141
+    rel_type: PARENT_OF
+
+  - from_label: Department
+    from_id: 102
+    to_label: Company
+    to_id: 100
+    rel_type: BELONGS_TO

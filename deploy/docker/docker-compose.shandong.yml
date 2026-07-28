@@ -1,0 +1,40 @@
+# 山东环境覆盖配置
+# 用法: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.shandong.yml up -d
+
+services:
+  industrial-ai:
+    container_name: industrial-ai-shandong
+    env_file:
+      - ./.env.prod.shandong
+    ports:
+      - "9300:80"
+
+  knb-celery-worker:
+    container_name: knb-celery-worker-shandong
+    env_file:
+      - ./.env.prod.shandong
+
+  # Redis 端口覆盖（避免与服务器上已有的 redis 冲突）
+  redis:
+    container_name: redis-shandong
+    ports:
+      - "16379:6379"
+
+  # MinIO 端口覆盖（避免与服务器上已有的 minio 冲突）
+  minio:
+    container_name: minio-shandong
+    ports: !override
+      - "9002:9000"
+      - "9003:9001"
+
+  # 维修工单评分服务（使用 shandong 的环境变量）
+  repair-suggestion:
+    container_name: repair-suggestion-shandong
+    env_file:
+      - ./.env.prod.shandong
+    ports:
+      - "8000:8000"
+
+  mqtt-etl:
+    env_file:
+      - ./.env.prod.shandong

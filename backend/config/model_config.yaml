@@ -1,0 +1,27 @@
+# ============================================
+# 模型配置 - 为特定报告类型指定不同的 LLM 模型
+# ============================================
+#
+# 默认模型：使用 .env 中的 PROVIDER 配置
+# 此文件只需配置与默认不同的报告类型
+#
+# 配置方式：
+#   provider: "deepseek"           # 读取环境变量
+#   或
+#   base_url: "https://..."
+#   api_key: "your-key"
+#   model: "deepseek-chat"
+
+report_models:
+  # 质量类报告使用 DeepSeek 模型
+  qualityDailyReport:
+    provider: "deepseek"
+
+  qualityWeeklyReport:
+    provider: "deepseek"
+
+  qualityMonthlyReport:
+    provider: "deepseek"
+
+  leanQualityWeekReport:
+    provider: "deepseek"

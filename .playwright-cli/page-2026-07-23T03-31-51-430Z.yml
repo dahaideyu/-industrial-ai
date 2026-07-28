@@ -1,0 +1,59 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - link "AI 数智资产管理系统" [ref=e7] [cursor=pointer]:
+          - /url: /dashboard
+          - generic [ref=e8]: AI
+          - generic [ref=e9]: 数智资产管理系统
+        - navigation [ref=e10]:
+          - button "AI 工作流 ▼" [ref=e12] [cursor=pointer]:
+            - text: AI 工作流
+            - generic [ref=e13]: ▼
+          - button "诊断与建议 ▼" [ref=e15] [cursor=pointer]:
+            - text: 诊断与建议
+            - generic [ref=e16]: ▼
+          - button "数据与任务 ▼" [ref=e18] [cursor=pointer]:
+            - text: 数据与任务
+            - generic [ref=e19]: ▼
+          - button "AI 智能问答 ▼" [ref=e21] [cursor=pointer]:
+            - text: AI 智能问答
+            - generic [ref=e22]: ▼
+          - button "系统管理 ▼" [ref=e24] [cursor=pointer]:
+            - text: 系统管理
+            - generic [ref=e25]: ▼
+      - generic [ref=e26]:
+        - link "生成 AI 报告 +" [ref=e27] [cursor=pointer]:
+          - /url: /report
+          - generic [ref=e28]: 生成 AI 报告
+          - generic [ref=e29]: +
+        - generic [ref=e32]: AI 在线
+        - generic [ref=e33]:
+          - generic [ref=e34]: 管
+          - generic [ref=e35]:
+            - paragraph [ref=e36]: 管理员
+            - paragraph [ref=e37]: admin
+          - button "退出" [ref=e38] [cursor=pointer]
+  - main [ref=e39]:
+    - generic [ref=e40]:
+      - generic [ref=e42]:
+        - button "+ 新建会话" [ref=e44] [cursor=pointer]
+        - generic [ref=e46]: 最近会话
+        - generic [ref=e47] [cursor=pointer]: 🔄 刷新问答记忆
+      - generic [ref=e48]:
+        - generic [ref=e50]: 暂无对话，点击下方输入框开始提问
+        - generic [ref=e52]:
+          - textbox "💬 输入你的问题..." [ref=e53]
+          - button "发送" [disabled] [ref=e54]
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - generic [ref=e58]: 🔮 AI 匹配的知识库 （上个问题）
+          - generic [ref=e60]: 暂无匹配
+        - generic [ref=e61]:
+          - generic [ref=e62]: 👆 手动选择的知识库 （下个问题）
+          - generic [ref=e64]: 未选择（将使用 AI 自动判断）
+          - button "+ 添加/修改知识库" [ref=e65] [cursor=pointer]
+        - generic [ref=e66]:
+          - text: 💡 手动选择的 KB 会与 AI 自动判断合并，作为
+          - strong [ref=e67]: 下个问题
+          - text: 的检索范围。

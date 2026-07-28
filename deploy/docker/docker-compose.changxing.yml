@@ -1,0 +1,47 @@
+# 长兴环境覆盖配置
+# 用法: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.changxing.yml --profile local-db --profile mqtt up -d
+
+services:
+  industrial-ai:
+    container_name: industrial-ai-changxing
+    env_file:
+      - ./.env.prod.changxing
+    ports:
+      - "9300:80"
+
+  # 长兴环境启用内部 PostgreSQL（通过 --profile local-db 激活）
+  postgresql:
+    environment:
+      POSTGRES_DB: knowledge_base
+      POSTGRES_USER: zxzz
+      POSTGRES_PASSWORD: Admin@Zxzz
+
+  knb-celery-worker:
+    env_file:
+      - ./.env.prod.changxing
+
+  repair-suggestion:
+    env_file:
+      - ./.env.prod.changxing
+
+  mqtt-etl:
+    env_file:
+      - ./.env.prod.changxing
+
+  # 长兴机上 RAGFlow（/opt/ragflow/docker）没有自己的 MinIO，历史上传的原文档
+  # 全存在本栈 MinIO 里（按服务名 minio 访问）。两栈网络拆分后 RAGFlow 解析不到
+  # minio，文档预览会显示 "This file is empty."。这里把本栈 minio 固定挂进
+  # RAGFlow 的 docker_ragflow 网络并保留 minio 别名，容器重建也不掉线。
+  # （redis 不用挂：RAGFlow 已启用自己栈内的 valkey。）
+  minio:
+    networks:
+      default:
+      ragflow_net:
+        aliases:
+          - minio
+
+networks:
+  # RAGFlow 栈的网络（外部已存在，由 /opt/ragflow/docker 的 compose 创建）
+  ragflow_net:
+    external: true
+    name: docker_ragflow

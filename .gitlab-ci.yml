@@ -1,0 +1,25 @@
+stages:
+  - build
+
+variables:
+  IMAGE_NAME: "industrial-ai"
+  IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
+  TAR_FILE: "${IMAGE_NAME}-${IMAGE_TAG}.tar"
+
+build:image:
+  stage: build
+  only:
+    - master
+    - /^feature/
+  script:
+    - echo "构建 Docker 镜像 ${IMAGE_NAME}:${IMAGE_TAG}"
+    - docker build -f deploy/docker/Dockerfile --build-arg COMPILE_SOURCE=false --build-arg VITE_ENABLE_SQL_QA=true -t "${IMAGE_NAME}:${IMAGE_TAG}" -t "${IMAGE_NAME}:latest" .
+    - echo "导出镜像到 ${TAR_FILE}"
+    - docker save -o "${TAR_FILE}" "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}:latest"
+    - echo "镜像导出完成"
+    - ls -lh "${TAR_FILE}"
+  artifacts:
+    name: "${IMAGE_NAME}-${IMAGE_TAG}"
+    paths:
+      - "${TAR_FILE}"
+    expire_in: 7 days
