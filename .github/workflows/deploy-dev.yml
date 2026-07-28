@@ -13,7 +13,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,13 +32,14 @@ jobs:
           rsync -az --delete \
             --exclude '.git/' \
             --exclude 'deploy/docker/.env' \
-            -e "ssh -p ${{ secrets.DEPLOY_PORT }} -i ~/.ssh/id_ed25519" \
+            -e "ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 -p ${{ secrets.DEPLOY_PORT }} -i ~/.ssh/id_ed25519" \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/industrial-ai/"
 
       - name: Build and restart
         shell: bash
         run: |
-          ssh -p "${{ secrets.DEPLOY_PORT }}" -i ~/.ssh/id_ed25519 \
+          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -p "${{ secrets.DEPLOY_PORT }}" -i ~/.ssh/id_ed25519 \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'bash -se' <<'REMOTE'
           set -Eeuo pipefail
           cd /opt/industrial-ai
