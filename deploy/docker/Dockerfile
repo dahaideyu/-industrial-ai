@@ -98,7 +98,8 @@ ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 安装 nginx + LibreOffice + Tesseract OCR（中文）+ poppler（pdf2image）+ PostgreSQL 客户端（pg_isready）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
     nginx curl postgresql-client \
     libreoffice-common libreoffice-writer libreoffice-calc libreoffice-impress \
     fontconfig fonts-noto-cjk fonts-liberation \
