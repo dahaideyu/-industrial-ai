@@ -86,7 +86,11 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 分钟不够：服务器在国内，要从 ghcr.io 拉三个应用镜像（final-app 带
+    # LibreOffice+nginx+前端，体积不小）外加 timescaledb/postgres/redis/minio 几个
+    # 基础镜像，跨境拉几个 GB 经常超过 15 分钟，超时后 GitHub 会取消 job，
+    # 步骤日志里显示的就是 "Error: The operation was canceled"。
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -107,6 +111,38 @@ jobs:
             --exclude 'deploy/docker/.env' \
             -e "ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 -p ${{ secrets.DEPLOY_PORT }} -i ~/.ssh/id_ed25519" \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/industrial-ai/"
+
+      # 应用镜像走 ghcr.io，但 timescaledb/postgres/redis/minio 这几个基础镜像仍从
+      # Docker Hub 拉，国内直连又慢又限流。mirror.ccs.tencentyun.com 是腾讯云给 CVM 的
+      # 内网加速，免费且不占 Docker Hub 匿名限额。必须配在服务器上——真正执行 pull 的是
+      # 腾讯云那台机器，配在 runner 上没有任何作用。
+      # 幂等：已生效则跳过；已有 daemon.json 但没配 mirror 时只告警不自动改，避免覆盖
+      # 别的配置项。continue-on-error：部署账号未必有免密 sudo，失败不该阻断部署。
+      - name: Ensure Docker registry mirror
+        continue-on-error: true
+        shell: bash
+        run: |
+          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -p "${{ secrets.DEPLOY_PORT }}" -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'bash -se' <<'REMOTE'
+          set -Euo pipefail
+          if docker info 2>/dev/null | grep -q "mirror.ccs.tencentyun.com"; then
+            echo "registry mirror 已生效，跳过"
+            exit 0
+          fi
+          if [ -s /etc/docker/daemon.json ]; then
+            echo "::warning::/etc/docker/daemon.json 已存在但未配 registry-mirrors，跳过自动修改，请手动合并"
+            cat /etc/docker/daemon.json
+            exit 0
+          fi
+          echo "=== 写入 registry mirror 并重启 docker ==="
+          sudo install -d -m 755 /etc/docker
+          echo '{ "registry-mirrors": ["https://mirror.ccs.tencentyun.com"] }' | sudo tee /etc/docker/daemon.json
+          sudo systemctl daemon-reload
+          sudo systemctl restart docker
+          for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 2; done
+          docker info | grep -A3 "Registry Mirrors" || true
+          REMOTE
 
       - name: Pull images and restart
         shell: bash
@@ -131,11 +167,23 @@ jobs:
           export IMAGE_TAG='${{ github.sha }}'
           export APP_DATA_ROOT=/data/industrial-ai
           export APP_PORT=9300
-          docker compose \
-            -f deploy/docker/docker-compose.yml \
-            -f deploy/docker/docker-compose.tencent.yml \
-            --profile local-db \
-            pull
+          # 跨境拉几个 GB 很容易中途断。docker 的分层缓存让重试能接着上次的进度走，
+          # 所以循环重试比一次失败就判死刑划算得多。
+          for attempt in 1 2 3; do
+            echo "=== docker compose pull (第 $attempt/3 次) ==="
+            if docker compose \
+                 -f deploy/docker/docker-compose.yml \
+                 -f deploy/docker/docker-compose.tencent.yml \
+                 --profile local-db \
+                 pull; then
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "拉取三次均失败，中止部署"
+              exit 1
+            fi
+            sleep 15
+          done
           docker compose \
               -f deploy/docker/docker-compose.yml \
               -f deploy/docker/docker-compose.tencent.yml \

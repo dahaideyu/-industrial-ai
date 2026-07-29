@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 # Industrial AI — 三个 target 共用同一套构建阶段，按服务实际需要的依赖分层，避免
 # repair-suggestion/mqtt-etl 这类轻量服务也背上 nginx+LibreOffice+OCR 的体积：
-#   final-base  （默认不用，供下面两个 target 继承）— 纯后端运行时，repair-suggestion/mqtt-etl 用
-#   final-worker（--target final-worker）— final-base + LibreOffice + OCR，knb-celery-worker 用
-#   final-app   （默认 target，不加 --target 时构建这个）— final-base + nginx + 前端 + LibreOffice，industrial-ai 用
+#   final-base  （默认不用，供下面继承）— 纯后端运行时，repair-suggestion/mqtt-etl 用
+#   final-office（默认不用，供下面两个 target 继承）— final-base + LibreOffice + 中文字体
+#   final-worker（--target final-worker）— final-office + OCR，knb-celery-worker 用
+#   final-app   （默认 target，不加 --target 时构建这个）— final-office + nginx + 前端，industrial-ai 用
 # 构建: docker build -f deploy/docker/Dockerfile -t industrial-ai .（从仓库根目录执行，构建 final-app）
 # 启动: docker compose -f deploy/docker/docker-compose.yml up
 
@@ -109,6 +110,17 @@ RUN if [ "$COMPILE_SOURCE" = "true" ]; then \
 FROM python:3.12-slim AS final-base
 WORKDIR /app
 
+# apt 源可切换。放在 final-base 而不是各子阶段：下游 final-office/final-worker/
+# final-app 都 FROM 过来，改这一处即可被全部继承。
+# 默认空 = 用 deb.debian.org。CI 构建跑在 GitHub runner（境外）上，走腾讯云源反而更慢，
+# 所以默认不换；只有在腾讯云服务器上本地构建时才传：
+#   docker compose build --build-arg APT_MIRROR=mirrors.cloud.tencent.com
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s/deb.debian.org/$APT_MIRROR/g" /etc/apt/sources.list.d/debian.sources && \
+        echo "=== apt 源已切换到 $APT_MIRROR ==="; \
+    fi
+
 # 设置时区为北京时间
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -146,28 +158,33 @@ ENV PATH="/app/.venv/bin:$PATH"
 # repair-suggestion / mqtt-etl / knb-celery-worker 的启动命令由 compose 的 command: 指定，
 # 此 target 不设默认 CMD
 
-# ---- Stage 4: 文档处理 worker ----
-# 供 knb-celery-worker 使用：需要 LibreOffice（Office→PDF，见 convert_tasks.py）+
-# Tesseract OCR/poppler（扫描件文本提取，见 markitdown_client.py / extract_tasks.py）。
-# 不需要 nginx，也不需要前端构建产物。
-FROM final-base AS final-worker
+# ---- Stage 3.5: LibreOffice + 中文字体公共层 ----
+# final-worker 和 final-app 都需要 LibreOffice + fonts-noto-cjk（几百 MB）。原先两个
+# 阶段各装一遍 = 同一批包下载安装两次；抽成公共层后只下一次，两个 target 共享同一层缓存。
+# 不并入 final-base，是为了保持 repair-suggestion/mqtt-etl 的轻量（见文件头注释）。
+FROM final-base AS final-office
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-common libreoffice-writer libreoffice-calc libreoffice-impress \
     fontconfig fonts-noto-cjk fonts-liberation \
-    tesseract-ocr tesseract-ocr-chi-sim poppler-utils \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
+# ---- Stage 4: 文档处理 worker ----
+# 供 knb-celery-worker 使用：final-office（LibreOffice，Office→PDF，见 convert_tasks.py）
+# + Tesseract OCR/poppler（扫描件文本提取，见 markitdown_client.py / extract_tasks.py）。
+# 不需要 nginx，也不需要前端构建产物。
+FROM final-office AS final-worker
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr tesseract-ocr-chi-sim poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 # ---- Stage 5: 完整应用（默认 target）----
-# 供 industrial-ai 使用：final-base + nginx + 前端静态资源 + LibreOffice（文档预览接口用，
-# 见 backend/routes/knowledge_qa/routes.py）。不需要 OCR/poppler——那是 celery worker
-# 异步抽取任务专用（final-worker），预览接口不做 OCR。
-FROM final-base AS final-app
+# 供 industrial-ai 使用：final-office + nginx + 前端静态资源。LibreOffice 供文档预览
+# 接口用（见 backend/routes/knowledge_qa/routes.py）。不需要 OCR/poppler——那是
+# celery worker 异步抽取任务专用（final-worker），预览接口不做 OCR。
+FROM final-office AS final-app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
-    libreoffice-common libreoffice-writer libreoffice-calc libreoffice-impress \
-    fontconfig fonts-noto-cjk fonts-liberation \
-    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制前端构建产物
