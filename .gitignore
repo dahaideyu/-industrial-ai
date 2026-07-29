@@ -110,4 +110,5 @@ features_output/
 # ========================================
 docs/02_small_tables.sql
 docs/03_hypertables_1d.sql
+docs/*.tar.gz
 docs/mqttetl.jpg
