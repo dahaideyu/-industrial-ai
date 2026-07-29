@@ -1,123 +1,29 @@
 name: Deploy dev to Tencent Cloud
 
+# 架构：只同步代码，镜像在腾讯云服务器上本地构建。
+# 不经过任何 registry 分发应用镜像——ghcr.io 从国内拉取跨境几个 GB，是之前
+# deploy 超时被取消的根因；腾讯云 TCR 收费。改为服务器本地构建后，对外依赖只剩
+# Docker Hub 的几个基础镜像（已由 registry mirror 走腾讯云内网加速）和
+# apt/pypi/npm（Dockerfile 里已全部指向国内源）。
+
 on:
   push:
     branches:
       - dev
   workflow_dispatch:
 
+# cancel-in-progress: false —— 部署是有状态操作，跑到一半被新 push 腰斩会在服务器上
+# 留下写了一半的镜像层和孤儿 build 进程（2026-07-29 那次 31 分钟的构建就是这么没的，
+# 报错 "Error: The operation was canceled"）。改成排队后同一时刻仍只跑一个，
+# 但新的会等旧的跑完，不会互相打断。
 concurrency:
   group: industrial-ai-dev-deploy
-  # Do not interrupt a deployment halfway through. A newer push waits for the
-  # current deployment and then replaces it.
   cancel-in-progress: false
 
-permissions:
-  contents: read
-  packages: write
-
-env:
-  IMAGE_NAME: ghcr.io/dahaideyu/industrial-ai
-
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push application image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/Dockerfile
-          target: final-app
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.IMAGE_NAME }}:dev
-          # provenance/sbom 关掉：默认会额外生成证明制品，把镜像变成多 manifest 索引，
-          # push 和 pull 都要多传一轮。这条流水线不做供应链签名校验，纯属开销。
-          provenance: false
-          sbom: false
-          # APT_MIRROR= （空）：构建跑在境外 runner 上，走国内镜像源反而更慢，
-          # 用官方 deb.debian.org。服务器本地构建时不传此参数，走 Dockerfile 里的清华源默认值。
-          build-args: |
-            COMPILE_SOURCE=false
-            VITE_ENABLE_SQL_QA=true
-            APT_MIRROR=
-          # cache-from 读三个 scope：app/worker/lean 共享 backend-deps、code-protect、
-          # final-base、final-office 这几层，跨 scope 读取可以让冷启动时也复用，
-          # 不必每个 scope 各自重建一遍公共阶段。cache-to 仍写各自 scope，避免互相覆盖。
-          cache-from: |
-            type=gha,scope=industrial-ai-app
-            type=gha,scope=industrial-ai-worker
-            type=gha,scope=industrial-ai-lean
-          cache-to: type=gha,mode=max,scope=industrial-ai-app
-
-      - name: Build and push worker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/Dockerfile
-          target: final-worker
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}-worker:${{ github.sha }}
-            ${{ env.IMAGE_NAME }}-worker:dev
-          provenance: false
-          sbom: false
-          build-args: |
-            COMPILE_SOURCE=false
-            APT_MIRROR=
-          cache-from: |
-            type=gha,scope=industrial-ai-app
-            type=gha,scope=industrial-ai-worker
-            type=gha,scope=industrial-ai-lean
-          # mode=min（app 那边才用 max）：Actions 缓存每仓库上限 10 GB 且不跨 key 去重，
-          # 三个 scope 都存全量中间层会撑爆并触发 LRU 驱逐，反而让缓存长期失效。
-          # 公共阶段由上面 app 的 max 缓存提供，这里只导出自身最终层即可。
-          cache-to: type=gha,mode=min,scope=industrial-ai-worker
-
-      - name: Build and push lean image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/docker/Dockerfile
-          target: final-base
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}-lean:${{ github.sha }}
-            ${{ env.IMAGE_NAME }}-lean:dev
-          provenance: false
-          sbom: false
-          build-args: |
-            COMPILE_SOURCE=false
-            APT_MIRROR=
-          cache-from: |
-            type=gha,scope=industrial-ai-app
-            type=gha,scope=industrial-ai-worker
-            type=gha,scope=industrial-ai-lean
-          cache-to: type=gha,mode=min,scope=industrial-ai-lean
-
   deploy:
-    needs: build
     runs-on: ubuntu-latest
-    # 15 分钟不够：服务器在国内，要从 ghcr.io 拉三个应用镜像（final-app 带
-    # LibreOffice+nginx+前端，体积不小）外加 timescaledb/postgres/redis/minio 几个
-    # 基础镜像，跨境拉几个 GB 经常超过 15 分钟，超时后 GitHub 会取消 job，
-    # 步骤日志里显示的就是 "Error: The operation was canceled"。
+    # 服务器本地构建 + 首次冷缓存可能接近半小时，留足余量。
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -131,6 +37,9 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p "${{ secrets.DEPLOY_PORT }}" "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
+      # 只同步代码，几 MB 文本，跨境传输不构成瓶颈。
+      # 排除 deploy/docker/.env —— 服务器上那是指向 /data/.../config/.env 的软链，
+      # 覆盖会把权威配置弄丢。
       - name: Sync source
         shell: bash
         run: |
@@ -140,12 +49,12 @@ jobs:
             -e "ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 -p ${{ secrets.DEPLOY_PORT }} -i ~/.ssh/id_ed25519" \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/industrial-ai/"
 
-      # 应用镜像走 ghcr.io，但 timescaledb/postgres/redis/minio 这几个基础镜像仍从
-      # Docker Hub 拉，国内直连又慢又限流。mirror.ccs.tencentyun.com 是腾讯云给 CVM 的
-      # 内网加速，免费且不占 Docker Hub 匿名限额。必须配在服务器上——真正执行 pull 的是
-      # 腾讯云那台机器，配在 runner 上没有任何作用。
+      # 服务器直连 Docker Hub 又慢又限流。mirror.ccs.tencentyun.com 是腾讯云给 CVM 的
+      # 内网加速：走内网、免费、不占 Docker Hub 匿名拉取限额。必须配在服务器上——
+      # 真正执行 docker pull 的是腾讯云那台机器，配在 runner 上没有任何作用。
       # 幂等：已生效则跳过；已有 daemon.json 但没配 mirror 时只告警不自动改，避免覆盖
-      # 别的配置项。continue-on-error：部署账号未必有免密 sudo，失败不该阻断部署。
+      # 别的配置项（比如 tencent.yml 注释里提到的 data-root）。
+      # continue-on-error：部署账号未必有免密 sudo，失败不该阻断部署。
       - name: Ensure Docker registry mirror
         continue-on-error: true
         shell: bash
@@ -172,7 +81,38 @@ jobs:
           docker info | grep -A3 "Registry Mirrors" || true
           REMOTE
 
-      - name: Pull images and restart
+      # 把基础镜像拉取从 build 里拆出来单独做，带重试和单次超时。
+      # 好处：1) Docker Hub 偶发超时不会直接判整个部署失败；2) 日志里一眼能分清
+      # 是"拉取慢"还是"构建慢"；3) 已存在的镜像直接跳过。
+      # continue-on-error：这里拉不到还有 build 阶段兜底，不该提前阻断。
+      - name: Pre-pull base images
+        continue-on-error: true
+        shell: bash
+        run: |
+          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -p "${{ secrets.DEPLOY_PORT }}" -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'bash -se' <<'REMOTE'
+          set -Euo pipefail
+          IMAGES="node:22-alpine python:3.12-slim timescale/timescaledb:2.19.1-pg14 postgres:15 redis:7-alpine minio/minio"
+          for img in $IMAGES; do
+            if docker image inspect "$img" >/dev/null 2>&1; then
+              echo "已存在，跳过: $img"
+              continue
+            fi
+            for attempt in 1 2 3; do
+              echo "=== 拉取 $img (第 $attempt/3 次) ==="
+              if timeout 600 docker pull "$img"; then
+                break
+              fi
+              if [ "$attempt" = 3 ]; then
+                echo "::warning::预拉取失败，留给 build 阶段重试: $img"
+              fi
+              sleep 10
+            done
+          done
+          REMOTE
+
+      - name: Build and restart
         shell: bash
         run: |
           ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
@@ -188,68 +128,32 @@ jobs:
           ln -sfn /data/industrial-ai/config/.env deploy/docker/.env
           docker volume inspect industrial_pgdata >/dev/null 2>&1 || docker volume create industrial_pgdata
           docker volume inspect industrial_minio >/dev/null 2>&1 || docker volume create industrial_minio
-          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | \
-            docker login ghcr.io -u '${{ github.actor }}' --password-stdin
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-          export IMAGE_NAME='${{ env.IMAGE_NAME }}'
-          export IMAGE_TAG='${{ github.sha }}'
-          export APP_DATA_ROOT=/data/industrial-ai
-          export APP_PORT=9300
-          # 跨境拉几个 GB 很容易中途断。docker 的分层缓存让重试能接着上次的进度走，
-          # 所以循环重试比一次失败就判死刑划算得多。
-          for attempt in 1 2 3; do
-            echo "=== docker compose pull (第 $attempt/3 次) ==="
-            if docker compose \
-                 -f deploy/docker/docker-compose.yml \
-                 -f deploy/docker/docker-compose.tencent.yml \
-                 --profile local-db \
-                 pull; then
-              break
-            fi
-            if [ "$attempt" = 3 ]; then
-              echo "拉取三次均失败，中止部署"
-              exit 1
-            fi
-            sleep 15
-          done
-          docker compose \
+          # COMPILE_SOURCE=false：dev 环境不做 Cython 编译。Dockerfile 的设计意图本就是
+          # "测试环境不编译（构建快、方便调试），生产环境编译（保护源码）"。关掉后连带
+          # 省去 gcc/python3-dev/build-essential 的安装，以及每次改后端代码都要重跑的全量编译。
+          # 不传 APT_MIRROR：走 Dockerfile 里的清华源默认值（服务器在国内，这是对的）。
+          APP_DATA_ROOT=/data/industrial-ai APP_PORT=9300 COMPILE_SOURCE=false \
+            docker compose \
               -f deploy/docker/docker-compose.yml \
               -f deploy/docker/docker-compose.tencent.yml \
               --profile local-db \
-              up -d --no-build --remove-orphans
+              up -d --build --remove-orphans
           curl --fail --retry 20 --retry-delay 3 http://127.0.0.1:9300/
           REMOTE
 
-  # 每次部署成功后清理 GHCR 上的历史镜像版本，避免 package 存储无限增长。
-  # 只保留 2 个版本 = 当前这次 + 上一次，再往前的自动删除。
-  # 放在 deploy 之后而不是用 schedule 触发：本 workflow 的 push 触发会连带跑 build/deploy，
-  # 加 schedule 会导致定时空跑一次部署；挂在 needs: deploy 上则天然只在有新镜像时才清理。
-  #
-  # 注意：一次 build 推两个 tag（<sha> 和 dev），但它们指向同一个 digest，算 1 个版本。
-  # min-versions-to-keep 按创建时间保留最新的 N 个，当前 dev 必然在内，不会误删在用镜像。
-  # 回滚能力因此被限制为「只能回退到上一次」，这是保留 2 个版本的代价。
-  cleanup:
-    needs: deploy
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        package:
-          - industrial-ai
-          - industrial-ai-worker
-          - industrial-ai-lean
-    steps:
-      # continue-on-error：清理失败不该把整条部署标红。用户名下（非组织）的 package
-      # 用 GITHUB_TOKEN 删除有时会 403，那种情况改传一个带 delete:packages 权限的 PAT：
-      #   token: ${{ secrets.GHCR_CLEANUP_TOKEN }}
-      - name: Delete old image versions
+      # 反复构建会积累无 tag 的悬空层，磁盘满了会让后续构建以各种莫名其妙的方式失败。
+      # 只清 dangling，绝不用 system prune -a —— 那会把 python:3.12-slim、node:22-alpine
+      # 这些基础镜像缓存一起清掉，下次又要从头拉一遍。
+      - name: Prune dangling images
+        if: always()
         continue-on-error: true
-        uses: actions/delete-package-versions@v5
-        with:
-          owner: ${{ github.repository_owner }}
-          package-name: ${{ matrix.package }}
-          package-type: container
-          min-versions-to-keep: 2
+        shell: bash
+        run: |
+          ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
+            -p "${{ secrets.DEPLOY_PORT }}" -i ~/.ssh/id_ed25519 \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'bash -se' <<'REMOTE'
+          set -Euo pipefail
+          docker image prune -f
+          echo "=== 磁盘占用 ==="
+          df -h / /data 2>/dev/null || df -h /
+          REMOTE
