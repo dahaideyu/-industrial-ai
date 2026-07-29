@@ -328,11 +328,22 @@ async function loadKnowledgeInsight() {
       reason: parts.join('；') + '。',
     }
   } catch (e) {
-    knowledgeInsight.value = {
-      level: '稳定',
-      confidence: 50,
-      title: '知识库健康度待评估',
-      reason: '暂未获取到知识库健康数据，请稍后点击"刷新洞察"重试。',
+    const status = e?.response?.status
+    if (status === 404) {
+      // 后端 ENABLE_KNOWLEDGE_BASE 关闭时这个路由根本不存在，重试也没用，如实告知而不是让人以为"稍后能好"
+      knowledgeInsight.value = {
+        level: '稳定',
+        confidence: 0,
+        title: '知识库管理功能未启用',
+        reason: '当前环境未开启知识库管理模块（ENABLE_KNOWLEDGE_BASE），需要管理员在部署配置里打开并部署 RAGFlow 后才能看到这里的数据。',
+      }
+    } else {
+      knowledgeInsight.value = {
+        level: '稳定',
+        confidence: 50,
+        title: '知识库健康度待评估',
+        reason: '暂未获取到知识库健康数据，请稍后点击"刷新洞察"重试。',
+      }
     }
   }
 }

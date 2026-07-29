@@ -88,6 +88,7 @@ if env_loaded_path:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from core.response import success_response
 from routes import health_router, report_router, analysis_router, jobs_router, document_router, alarms_router, system_jobs_router
 from modules.auth import auth_router
 from modules.maintenance_report import maintenance_report_router
@@ -285,6 +286,7 @@ if ENABLE_SQL_QA:
 # ============================================================
 # 知识库管理模块（可选模块，通过 ENABLE_KNOWLEDGE_BASE 控制）
 # ============================================================
+ENABLE_KNOWLEDGE_QA = False  # 知识库问答依赖知识库管理，独立记录（管理注册成功但问答自己失败时不该报"全都行"）
 if ENABLE_KNOWLEDGE_BASE:
     try:
         from backend.routes.knowledge_management.routes import router as kb_router
@@ -294,6 +296,7 @@ if ENABLE_KNOWLEDGE_BASE:
         try:
             from backend.routes.knowledge_qa.routes import router as kbqa_router
             app.include_router(kbqa_router, prefix="/api/kb-qa", tags=["kb-qa"])
+            ENABLE_KNOWLEDGE_QA = True
             logger.info("[知识库问答] 路由注册完成")
         except Exception as e:
             logger.error(f"[知识库问答] 路由注册失败: {e}", exc_info=True)
@@ -301,6 +304,21 @@ if ENABLE_KNOWLEDGE_BASE:
         logger.info("[知识库管理] 路由注册完成")
     except Exception as e:
         logger.error(f"[知识库管理] 路由注册失败（主应用仍可正常运行）: {e}", exc_info=True)
+        # 之前这里没有把开关拨回 False：注册失败时 ENABLE_KNOWLEDGE_BASE 仍是 True，
+        # /api/features 会谎报"已启用"——跟 ENABLE_SQL_QA 失败时的处理方式(第283行)保持一致
+        ENABLE_KNOWLEDGE_BASE = False
+
+
+@app.get("/api/features")
+def get_feature_flags():
+    """暴露可选模块的真实启用状态（路由注册是否成功），供前端导航栏据此灰化/隐藏对应入口，
+    避免用户点进一个后端根本没注册路由的死链接。"""
+    return success_response(data={
+        "sql_qa": ENABLE_SQL_QA,
+        "knowledge_base": ENABLE_KNOWLEDGE_BASE,
+        "knowledge_qa": ENABLE_KNOWLEDGE_QA,
+    })
+
 
 # ============================================================
 # 启动入口（开发调试用，生产使用 uvicorn）

@@ -22,7 +22,7 @@
 | `pgdata` | 本地容器化 TimescaleDB 数据 | 否，仅 `--profile local-db` 时才会创建/使用 |
 | `knb_minio_data` / `knb_pgdata` | 旧命名兼容（`legacy` profile） | 否，仅 `--profile legacy` 时才会创建/使用 |
 
-生产/测试环境默认连外部数据库（10.1.2.227），一般不会用到 `local-db`/`legacy` profile，
+生产/测试环境默认连外部数据库（CHANGE_ME），一般不会用到 `local-db`/`legacy` profile，
 所以实际最需要关心的是 **`minio_data`**。如果某个环境确实开过 `--profile local-db`
 或 `--profile legacy`，把下面的步骤对 `pgdata`/`knb_pgdata`/`knb_minio_data` 各重复一遍即可。
 

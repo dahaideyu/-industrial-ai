@@ -78,7 +78,8 @@
                 <span>活跃: <b class="text-orange-500">{{ item.active_alarms || 0 }}</b></span>
               </div>
             </div>
-            <div v-if="!history.length" class="text-center text-gray-400 py-6 text-sm">暂无历史报告</div>
+            <div v-if="historyError" class="text-center text-red-400 py-6 text-sm">{{ historyError }}</div>
+            <div v-else-if="!history.length" class="text-center text-gray-400 py-6 text-sm">暂无历史报告</div>
           </div>
         </div>
       </div>
@@ -227,6 +228,7 @@ const loading = ref(false)
 const error = ref('')
 const result = ref(null)
 const history = ref([])
+const historyError = ref('')
 const selectedId = ref(null)
 
 const severityLabels = { '严重': '严重', '高': '高', '中': '中', '低': '低' }
@@ -279,20 +281,28 @@ async function runAnalysis() {
       error.value = res.msg || '分析失败'
     }
   } catch (err) {
-    error.value = '请求错误: ' + err.message
+    error.value = err.response
+      ? ('请求错误: ' + (err.response.data?.msg || err.message))
+      : '连不上后端服务，请检查后端是否正常运行。'
   } finally {
     loading.value = false
   }
 }
 
 async function loadHistory() {
+  historyError.value = ''
   try {
     const res = await getAlarmAnalysisHistory({ report_type: query.value.report_type, limit: 50 })
     if (res.code === 200) {
       history.value = res.data || []
+    } else {
+      history.value = []
+      historyError.value = res.msg || '加载历史失败'
     }
   } catch (err) {
     console.error('加载历史失败:', err)
+    history.value = []
+    historyError.value = err.response ? (err.response.data?.msg || err.message) : '连不上后端服务'
   }
 }
 
@@ -316,9 +326,12 @@ async function loadDetail(item) {
         saved: true
       }
       error.value = ''
+    } else {
+      error.value = res.msg || '加载详情失败'
     }
   } catch (err) {
     console.error('加载详情失败:', err)
+    error.value = err.response ? (err.response.data?.msg || err.message) : '连不上后端服务，请检查后端是否正常运行。'
   }
 }
 

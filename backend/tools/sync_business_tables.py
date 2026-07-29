@@ -24,7 +24,19 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 from typing import Any, Optional
+
+# 加载 .env（优先 docker/.env → backend/.env → 项目根 .env）
+try:
+    from dotenv import load_dotenv
+    _proj = Path(__file__).resolve().parent.parent.parent
+    _backend = Path(__file__).resolve().parent.parent
+    for _p in (_proj / "deploy" / "docker" / ".env", _backend / ".env", _proj / ".env"):
+        if _p.exists():
+            load_dotenv(_p, override=False)
+except ImportError:
+    pass
 
 import pymysql
 import psycopg2
@@ -32,11 +44,11 @@ import psycopg2.extras
 
 # ==================== 连接配置（env 优先，默认值兜底） ====================
 MYSQL_CONFIG: dict[str, Any] = {
-    "host": os.getenv("SRC_MYSQL_HOST", "192.168.50.213"),
-    "port": int(os.getenv("SRC_MYSQL_PORT", "3306")),
-    "user": os.getenv("SRC_MYSQL_USER", "readonly_user"),
-    "password": os.getenv("SRC_MYSQL_PASSWORD", "read@2026"),
-    "database": os.getenv("SRC_MYSQL_DB", "btr"),
+    "host": os.getenv("SRC_MYSQL_HOST") or os.getenv("AQA_MYSQL_HOST", "192.168.50.213"),
+    "port": int(os.getenv("SRC_MYSQL_PORT") or os.getenv("AQA_MYSQL_PORT", "3306")),
+    "user": os.getenv("SRC_MYSQL_USER") or os.getenv("AQA_MYSQL_USER", "CHANGE_MEonly_user"),
+    "password": os.getenv("SRC_MYSQL_PASSWORD") or os.getenv("AQA_MYSQL_PASSWORD", "CHANGE_ME@2026"),
+    "database": os.getenv("SRC_MYSQL_DB") or os.getenv("AQA_MYSQL_DATABASE", "btr"),
     "charset": "utf8mb4",
 }
 
@@ -45,7 +57,7 @@ PG_CONFIG: dict[str, Any] = {
     "port": os.getenv("DST_PG_PORT", "15432"),
     "dbname": os.getenv("DST_PG_DB", "knowledge_base"),
     "user": os.getenv("DST_PG_USER", "zxzz"),
-    "password": os.getenv("DST_PG_PASSWORD", "Admin@Zxzz"),
+    "password": os.getenv("DST_PG_PASSWORD", "CHANGE_ME@Zxzz"),
 }
 
 BATCH_SIZE = 1000

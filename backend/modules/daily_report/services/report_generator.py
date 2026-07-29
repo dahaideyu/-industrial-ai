@@ -7,8 +7,7 @@ import threading
 import queue as threading_queue
 
 import httpx
-from openai import OpenAI
-from core.config import CONFIG
+from core.config import CONFIG, get_llm_client
 from modules.daily_report.prompts import get_prompt_template, list_available_templates
 from backend.utils.data_cleaner import clean_raw_data, EXCLUDED_SOURCE_KEYS
 
@@ -94,11 +93,7 @@ def build_prompt(payload: dict) -> tuple[str, str]:
 def get_llm():
     """获取 LLM 实例（OpenAI 兼容接口）"""
     print(f"[调试] 初始化 LLM... 供应商: {CONFIG['provider']} 模型: {CONFIG['model']}")
-    return OpenAI(
-        base_url=CONFIG["base_url"],
-        api_key=CONFIG["api_key"],
-        timeout=600.0
-    )
+    return get_llm_client(timeout=600.0)
 
 
 def ollama_stream(prompt: str, model: str, base_url: str):

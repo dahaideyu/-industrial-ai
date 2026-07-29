@@ -14,7 +14,7 @@ PG_CONFIG = {
     "host": "192.168.50.227",
     "port": 15432,
     "user": "postgres",
-    "password": "Focus&2025!",
+    "password": "CHANGE_ME",
     "database": "postgres",
 }
 

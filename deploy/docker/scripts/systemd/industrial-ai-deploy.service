@@ -1,0 +1,17 @@
+[Unit]
+Description=Industrial AI - 检查 Gitee dev 分支并自动部署
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# 构建可能几分钟，别让 systemd 提前判超时
+TimeoutStartSec=1800
+Environment=REPO_DIR=/opt/industrial-ai
+Environment=APP_DATA_ROOT=/data/industrial-ai
+Environment=DEPLOY_REMOTE=gitee
+Environment=DEPLOY_BRANCH=dev
+ExecStart=/opt/industrial-ai/deploy/docker/scripts/auto-deploy.sh
+# 日志走 journald，用 journalctl -u industrial-ai-deploy 看
+StandardOutput=journal
+StandardError=journal

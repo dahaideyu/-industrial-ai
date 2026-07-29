@@ -6,7 +6,7 @@ import threading
 
 from config import Config
 from database import DatabaseWriter
-from parser import AlarmMessageParser, EnergyMessageParser, RawMessageParser
+from parser import AlarmMessageParser, EnergyMessageParser
 from buffer import BatchBuffer
 from mqtt_client import MQTTClient
 
@@ -27,9 +27,6 @@ class Application:
         self.energy_parser = EnergyMessageParser()
         self.energy_buffer = BatchBuffer(self.db_writer.write_energy_batch, name="energy")
 
-        self.nh_parser = RawMessageParser()
-        self.nh_buffer = BatchBuffer(self.db_writer.write_nh_raw_batch, name="nh_raw")
-
         self.buffers = []
         routes = {}
         if Config.MQTT_TOPIC:
@@ -38,13 +35,8 @@ class Application:
         else:
             logger.warning("MQTT_TOPIC 未配置，报警点位topic不会被订阅")
         if Config.MQTT_TOPIC_NH:
-            # 电表能耗点位结构化解析入 device_energy_info，同时 device_nh_raw 原样落库做兜底/审计
-            routes[Config.MQTT_TOPIC_NH] = [
-                (self.energy_parser, self.energy_buffer),
-                (self.nh_parser, self.nh_buffer),
-            ]
+            routes[Config.MQTT_TOPIC_NH] = [(self.energy_parser, self.energy_buffer)]
             self.buffers.append(self.energy_buffer)
-            self.buffers.append(self.nh_buffer)
         else:
             logger.warning("MQTT_TOPIC_NH 未配置，NH topic不会被订阅")
 

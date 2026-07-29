@@ -554,16 +554,18 @@ async def predict_fault(request: PredictRequest):
         # 预测
         prediction = predictor.predict_latest(features)
 
-        # 构建风险时间线
+        # 构建风险时间线（先用向量化布尔筛选，再只对命中的行 zip 取值，
+        # 避免 iterrows() 逐行重建 Series 的开销）
         full_predictions = predictor.predict(features)
-        risk_timeline = []
-        for ts, row in full_predictions.iterrows():
-            if row["fault_probability"] > 0.1:
-                risk_timeline.append({
-                    "time": str(ts),
-                    "fault_probability": round(float(row["fault_probability"]), 4),
-                    "is_risk": bool(row["is_risk"]),
-                })
+        risky = full_predictions[full_predictions["fault_probability"] > 0.1]
+        risk_timeline = [
+            {
+                "time": str(ts),
+                "fault_probability": round(float(prob), 4),
+                "is_risk": bool(is_risk),
+            }
+            for ts, prob, is_risk in zip(risky.index, risky["fault_probability"], risky["is_risk"])
+        ]
 
         # 告警上下文
         alarm_context = ""

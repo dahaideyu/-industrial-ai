@@ -66,7 +66,7 @@ if not RAGFLOW_URL:
     RAGFLOW_URL = "http://localhost:9380"
 if not RAGFLOW_KEY:
     # 从 .env 加载后应该已经有了; 如果还没有, 使用测试环境 key
-    RAGFLOW_KEY = os.getenv("RAGFLOW_API_KEY", "ragflow-deHsn6xmgD84GgPqtskvFCX0pLipmHdnxdZoG3x4y7E")
+    RAGFLOW_KEY = os.getenv("RAGFLOW_API_KEY", "CHANGE_ME")
 
 # ============================================================
 # SSE 解析逻辑 (与 client.py 完全一致)

@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
-# Chaowei Agent — 统一镜像（后端 + 前端 + nginx）
-# 构建: docker build -f deploy/docker/Dockerfile -t industrial-ai .（从仓库根目录执行）
+# Industrial AI — 三个 target 共用同一套构建阶段，按服务实际需要的依赖分层，避免
+# repair-suggestion/mqtt-etl 这类轻量服务也背上 nginx+LibreOffice+OCR 的体积：
+#   final-base  （默认不用，供下面两个 target 继承）— 纯后端运行时，repair-suggestion/mqtt-etl 用
+#   final-worker（--target final-worker）— final-base + LibreOffice + OCR，knb-celery-worker 用
+#   final-app   （默认 target，不加 --target 时构建这个）— final-base + nginx + 前端 + LibreOffice，industrial-ai 用
+# 构建: docker build -f deploy/docker/Dockerfile -t industrial-ai .（从仓库根目录执行，构建 final-app）
 # 启动: docker compose -f deploy/docker/docker-compose.yml up
 
 # ---- Stage 1: 前端构建 ----
@@ -89,22 +93,19 @@ RUN if [ "$COMPILE_SOURCE" = "true" ]; then \
         echo "=== 跳过 Cython 编译（COMPILE_SOURCE=false）===" ; \
     fi
 
-# ---- Stage 3: 最终镜像 ----
-FROM python:3.12-slim
+# ---- Stage 3: 精简运行时基座 ----
+# 供 repair-suggestion / mqtt-etl 使用：不需要 nginx / LibreOffice / OCR，
+# 构建这两个 target 时 frontend-build 阶段不会被引用，直接跳过（省构建时间+体积）。
+FROM python:3.12-slim AS final-base
 WORKDIR /app
 
 # 设置时区为北京时间
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 安装 nginx + LibreOffice + Tesseract OCR（中文）+ poppler（pdf2image）+ PostgreSQL 客户端（pg_isready）
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    nginx curl postgresql-client \
-    libreoffice-common libreoffice-writer libreoffice-calc libreoffice-impress \
-    fontconfig fonts-noto-cjk fonts-liberation \
-    tesseract-ocr tesseract-ocr-chi-sim poppler-utils \
-    && fc-cache -f \
+# curl（健康检查）+ PostgreSQL 客户端（pg_isready，entrypoint 等待依赖用）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制 uv 安装的虚拟环境
@@ -128,6 +129,37 @@ RUN if [ -f backend/prompts_encrypted.json ]; then \
     find backend -name "*.so" | head -5 && \
     find backend -name "*.py" | head -5
 
+# 创建运行时目录
+RUN mkdir -p /app/logs /app/data /app/backend/data
+
+ENV PATH="/app/.venv/bin:$PATH"
+# repair-suggestion / mqtt-etl / knb-celery-worker 的启动命令由 compose 的 command: 指定，
+# 此 target 不设默认 CMD
+
+# ---- Stage 4: 文档处理 worker ----
+# 供 knb-celery-worker 使用：需要 LibreOffice（Office→PDF，见 convert_tasks.py）+
+# Tesseract OCR/poppler（扫描件文本提取，见 markitdown_client.py / extract_tasks.py）。
+# 不需要 nginx，也不需要前端构建产物。
+FROM final-base AS final-worker
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice-common libreoffice-writer libreoffice-calc libreoffice-impress \
+    fontconfig fonts-noto-cjk fonts-liberation \
+    tesseract-ocr tesseract-ocr-chi-sim poppler-utils \
+    && fc-cache -f \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- Stage 5: 完整应用（默认 target）----
+# 供 industrial-ai 使用：final-base + nginx + 前端静态资源 + LibreOffice（文档预览接口用，
+# 见 backend/routes/knowledge_qa/routes.py）。不需要 OCR/poppler——那是 celery worker
+# 异步抽取任务专用（final-worker），预览接口不做 OCR。
+FROM final-base AS final-app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nginx \
+    libreoffice-common libreoffice-writer libreoffice-calc libreoffice-impress \
+    fontconfig fonts-noto-cjk fonts-liberation \
+    && fc-cache -f \
+    && rm -rf /var/lib/apt/lists/*
+
 # 复制前端构建产物
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
@@ -141,10 +173,6 @@ COPY deploy/docker/scripts/diagnose_knb.py /app/diagnose_knb.py
 # 修复 Windows 换行符（CRLF → LF），避免 Linux 执行报错
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
-# 创建运行时目录
-RUN mkdir -p /app/logs /app/data /app/backend/data
-
 EXPOSE 80
-ENV PATH="/app/.venv/bin:$PATH"
 
 CMD ["/app/entrypoint.sh"]

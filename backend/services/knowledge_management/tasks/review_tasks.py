@@ -4,12 +4,10 @@ import difflib
 import json
 import logging
 
-import requests
-
 from backend.services.knowledge_management.tasks.celery_app import kb_celery
-from backend.core.knowledge_management.config import settings
 from backend.core.knowledge_management.database import SessionLocal
 from backend.core.knowledge_management.models import DocumentVersion, PlanItem
+from backend.services.knowledge_management.llm_client import call_llm
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +196,7 @@ def ai_review_task(self, version_id: str):
 ## 请输出 JSON 格式评分结果
 {{}}""".format(base_instruction, requirement_desc, diff_section, duplicate_note, text_preview, "relevance_score")
 
-        result = _call_llm(prompt)
+        result = call_llm(prompt, max_tokens=4000)
 
         # 检查返回结果是否为空
         if not result or not result.strip():
@@ -413,38 +411,3 @@ def _append_review_decision(
             decision = "驳回"
 
     return f"{quality_remark}\n[AI审核建议] {decision}"
-
-
-def _call_llm(prompt: str) -> str:
-    """调用 LLM API 生成文本（根据 PROVIDER 环境变量自动适配模型供应商）。
-
-    Args:
-        prompt: 用户提示。
-
-    Returns:
-        模型返回的文本内容。
-
-    Raises:
-        RuntimeError: API 调用失败。
-    """
-    url = f"{settings.deepseek_base_url.rstrip('/')}/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {settings.deepseek_api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": settings.deepseek_model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3,
-        "max_tokens": 4000,
-    }
-
-    resp = requests.post(url, headers=headers, json=payload, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()
-
-    choices = data.get("choices", [])
-    if not choices:
-        raise RuntimeError("LLM API 未返回有效响应")
-
-    return choices[0]["message"]["content"].strip()

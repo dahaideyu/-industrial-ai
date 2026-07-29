@@ -87,7 +87,7 @@ DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 VISION_MODEL=qwen-vl-plus
 
 # 上游 AQA MySQL（同步设备类型用）
-AQA_MYSQL_HOST=10.1.2.227
+AQA_MYSQL_HOST=CHANGE_ME
 AQA_MYSQL_PORT=3306
 AQA_MYSQL_USER=zxzz
 AQA_MYSQL_PASSWORD=your-aqa-password
@@ -106,7 +106,7 @@ KNB_SYNC_ENABLED=true
 启动知识库管理所需的基础设施：
 
 ```bash
-docker compose up -d redis minio knb-libreoffice
+docker compose up -d redis minio
 ```
 
 等待所有服务就绪（约 30 秒），检查状态：
@@ -350,11 +350,12 @@ docker compose restart chaowei-agent
 
 **排查**：
 ```bash
-docker compose logs knb-libreoffice
+docker compose logs industrial-ai    # 预览接口报错看这里
+docker compose logs knb-celery-worker  # 文档转换任务报错看这里
 ```
 
 **解决**：
-- LibreOffice 在容器内以独立进程运行，无需额外配置
+- LibreOffice 已内置在 `industrial-ai`/`knb-celery-worker` 镜像中，随容器进程调用，无需额外部署或配置
 - 如果内存不足，增加 Docker 内存限制（建议至少 4GB）
 
 ### 5.6 首页无数据（基地名、车间、设备类型都为空）
@@ -384,7 +385,7 @@ docker compose logs knb-libreoffice
    ```
 
 **解决**：
-- **容器内无法访问宿主机 IP**（如 `10.1.2.227`）：把 `AQA_MYSQL_HOST` 改为 `host.docker.internal`（Docker Desktop）或同网段 IP（Linux docker network）
+- **容器内无法访问宿主机 IP**（如 `CHANGE_ME`）：把 `AQA_MYSQL_HOST` 改为 `host.docker.internal`（Docker Desktop）或同网段 IP（Linux docker network）
 - **AQA MySQL 没同步 devicetype 表**：跑 AQA 端的 `dev_device_type` 数据初始化
 - **RAGFlow 连不上**：检查 `RAGFLOW_API_URL` 和 `RAGFLOW_API_KEY` 是否正确，否则 KB 创建会失败但不会抛 500
 

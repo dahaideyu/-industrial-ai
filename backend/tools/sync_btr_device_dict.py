@@ -44,8 +44,8 @@ def connect_mysql():
     cfg = dict(
         host="192.168.50.213",
         port=3306,
-        user="readonly_user",
-        password="read@2026",
+        user="CHANGE_MEonly_user",
+        password="CHANGE_ME@2026",
         database="btr",
         charset="utf8mb4",
         connect_timeout=10,
@@ -61,7 +61,7 @@ def connect_pg():
         port="15432",
         dbname="knowledge_base",
         user="zxzz",
-        password="Admin@Zxzz",
+        password="CHANGE_ME@Zxzz",
         connect_timeout=10,
     )
     print(f"[PG] 连接 {kwargs['host']}:{kwargs['port']}/{kwargs['dbname']} ...")

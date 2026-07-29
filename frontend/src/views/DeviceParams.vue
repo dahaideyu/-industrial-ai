@@ -27,7 +27,7 @@
 
         <div>
           <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
-            时间范围 <span class="text-gray-300 normal-case font-normal">（≤ 7 天）</span>
+            时间范围 <span class="text-gray-300 normal-case font-normal">（≤ 30 天）</span>
           </label>
           <div class="flex items-center gap-2">
             <input
@@ -78,47 +78,31 @@
           历史{{ showAnalysisLog ? ' ▴' : ' ▾' }}
         </button>
 
-        <div class="flex items-center gap-1 ml-2 bg-gray-100 rounded-lg p-0.5">
-          <button
-            @click="switchDataMode('params')"
-            class="px-3 py-1.5 text-xs rounded-md transition-colors"
-            :class="dataMode === 'params' ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-          >原始参数</button>
-          <button
-            @click="switchDataMode('features')"
-            class="px-3 py-1.5 text-xs rounded-md transition-colors"
-            :class="dataMode === 'features' ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-          >特征视图</button>
-          <button
-            @click="switchDataMode('stage')"
-            class="px-3 py-1.5 text-xs rounded-md transition-colors"
-            :class="dataMode === 'stage' ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-          >阶段分析</button>
-          <button
-            @click="switchDataMode('trend-alerts')"
-            class="px-3 py-1.5 text-xs rounded-md transition-colors"
-            :class="dataMode === 'trend-alerts' ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-          >趋势预警</button>
-          <button
-            @click="switchDataMode('profile')"
-            class="px-3 py-1.5 text-xs rounded-md transition-colors"
-            :class="dataMode === 'profile' ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-          >参数画像</button>
-          <button
-            @click="switchDataMode('predictive')"
-            class="px-3 py-1.5 text-xs rounded-md transition-colors"
-            :class="dataMode === 'predictive' ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-          >预测维护</button>
-        </div>
-
-        <div v-if="dataMode === 'params'" class="flex items-center gap-1 ml-2 bg-gray-100 rounded-lg p-0.5">
-          <button @click="chartMode='stack'; updateChart()" class="px-2 py-1 text-xs rounded transition-colors"
-            :class="chartMode === 'stack' ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500'">分列</button>
-          <button @click="chartMode='overlay'; updateChart()" class="px-2 py-1 text-xs rounded transition-colors"
-            :class="chartMode === 'overlay' ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500'">叠加</button>
-        </div>
       </div>
+    </div>
 
+    <!-- 工作流 Tab（原弹窗内容已全部内联到各 tab 下）-->
+    <div class="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-2 mb-6">
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          v-for="(s, i) in WORKFLOW_STEPS" :key="s.key"
+          @click="onStepClick(i + 1)"
+          :title="s.desc"
+          class="px-3 py-1.5 text-xs rounded-md transition-colors"
+          :class="activeStep === i + 1 ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+        >{{ s.label }}</button>
+
+        <template v-if="activeStep === 1">
+          <span class="text-gray-200 mx-1">|</span>
+          <button @click="chartMode='stack'; updateChart()"
+            class="px-1.5 py-0.5 text-[11px] rounded transition-colors"
+            :class="chartMode === 'stack' ? 'text-gray-700 font-bold' : 'text-gray-400 hover:text-gray-600'">分列</button>
+          <button @click="chartMode='overlay'; updateChart()"
+            class="px-1.5 py-0.5 text-[11px] rounded transition-colors"
+            :class="chartMode === 'overlay' ? 'text-gray-700 font-bold' : 'text-gray-400 hover:text-gray-600'">叠加</button>
+        </template>
+      </div>
+      <template v-if="activeStep === 1">
       <!-- 快捷时间范围 -->
       <div class="flex flex-wrap items-center gap-1.5 mt-3">
         <span class="text-xs text-gray-400 mr-1">快捷范围:</span>
@@ -133,484 +117,81 @@
         <span v-if="activeQuickRange === 'custom'" class="text-xs text-gray-400 ml-1">自定义范围</span>
         <span v-if="rangeWarning" class="text-xs text-amber-600 ml-2">⚠ {{ rangeWarning }}</span>
       </div>
+      </template>
     </div>
 
-    <!-- 阶段分析视图（独立组件，自行加载数据）-->
-    <div v-if="dataMode === 'stage'">
-      <div v-if="!selectedDevice" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
-        <div class="text-4xl mb-3">🔧</div>
-        <p class="text-sm">请从上方选择设备</p>
-      </div>
-      <StageAnalysis v-else :key="selectedDevice" :device-code="selectedDevice" />
-    </div>
-
-    <!-- 参数趋势总览 / 漂移预警视图（读预计算统计，与原始图表无关）-->
-    <div v-else-if="dataMode === 'trend-alerts'">
-      <div v-if="!selectedDevice" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
-        <div class="text-4xl mb-3">📈</div>
-        <p class="text-sm">请从上方选择设备</p>
-      </div>
-      <div v-else class="space-y-4">
-        <!-- 头部：天数选择 + 漂移摘要 + 操作 -->
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <div class="flex items-center justify-between flex-wrap gap-3">
-            <div class="flex items-center gap-3 flex-wrap">
-              <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">参数趋势总览</span>
-              <div class="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
-                <button v-for="d in [7, 30, 90]" :key="d" @click="setTrendDays(d)"
-                  class="px-2.5 py-1 text-xs rounded-md transition-colors"
-                  :class="trendDays === d ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-                >{{ d }}天</button>
-              </div>
-              <span v-if="trendWindow" class="text-xs text-gray-400">{{ trendWindow }}</span>
-              <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-red-50 text-red-600 font-bold">显著漂移 {{ trendCounts.critical }}</span>
-              <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-bold">需关注 {{ trendCounts.warning }}</span>
-              <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500">平稳 {{ trendCounts.info }}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <button @click="loadTrendAlerts" :disabled="trendLoading"
-                class="px-3 py-1.5 text-xs rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 disabled:opacity-50">
-                {{ trendLoading ? '加载中…' : '刷新' }}
-              </button>
-              <button @click="triggerRollup" :disabled="trendRollupRunning"
-                title="按最近90天回填/重算该设备的统计与漂移（首次或数据更新后用）"
-                class="px-3 py-1.5 text-xs rounded-lg bg-violet-500 text-white font-bold hover:bg-violet-600 disabled:opacity-50">
-                {{ trendRollupRunning ? '计算中…(可能较慢)' : '立即计算(90天)' }}
-              </button>
-              <button @click="runDiagnose" :disabled="diagRunning"
-                title="AI 自主调用画像/趋势/Cpk/RUL/对标/前兆/告警工具，给出诊断"
-                class="px-3 py-1.5 text-xs rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-50">
-                {{ diagRunning ? 'AI 诊断中…' : '🩺 AI 诊断' }}
-              </button>
-            </div>
-          </div>
-          <p v-if="trendNote" class="text-xs text-amber-600 mt-2">⚠ {{ trendNote }}</p>
-          <p class="text-[11px] text-gray-300 mt-2">
-            均值/方差/标准差/极值按窗口内可叠加量精确重算；中位为日中位的近似；均差=各日中位的日间平均绝对偏差。趋势 = Mann-Kendall + Sen 斜率/天。
-          </p>
-        </div>
-
-        <!-- 分阶段漂移报警(7天滑动窗口·6σ) + 知识库诊断 -->
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <div class="flex items-center justify-between flex-wrap gap-3 mb-1">
-            <div class="flex items-center gap-3 flex-wrap">
-              <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">分阶段漂移报警 · 7天滑动窗口(6σ)</span>
-              <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-red-50 text-red-600 font-bold">显著 {{ stageAlertCounts.critical }}</span>
-              <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-bold">需关注 {{ stageAlertCounts.warning }}</span>
-              <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500">平稳 {{ stageAlertCounts.info }}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <button @click="loadStageAlerts" :disabled="stageAlertsLoading"
-                class="px-3 py-1.5 text-xs rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 disabled:opacity-50">
-                {{ stageAlertsLoading ? '加载中…' : '刷新' }}
-              </button>
-              <button @click="runAllStageDiag" :disabled="stageDiagRunning"
-                title="对全部需关注/显著漂移报警，结合知识库生成「是什么问题」并保存"
-                class="px-3 py-1.5 text-xs rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50">
-                {{ stageDiagRunning ? '知识库诊断中…' : '📚 全部诊断(知识库)' }}
-              </button>
-            </div>
-          </div>
-          <p v-if="stageAlertNote" class="text-xs text-amber-600 mt-1">⚠ {{ stageAlertNote }}</p>
-          <p class="text-[11px] text-gray-300 mt-1">
-            对每个连续参数在每个阶段内，按近 7 天稳健 z（MAD·1.4826≈σ）+ Mann-Kendall + Sen 斜率检测「逐渐变大/变小」；夜间任务对报警结合知识库预生成诊断。
-          </p>
-
-          <div v-if="stageAlerts.length > 0" class="mt-3 overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-gray-50">
-                <tr class="text-left text-xs text-gray-500 border-b border-gray-200 whitespace-nowrap">
-                  <th class="py-2.5 px-3 font-semibold">参数 · 阶段</th>
-                  <th class="py-2.5 px-3 font-semibold">趋势判定</th>
-                  <th class="py-2.5 px-3 font-semibold text-right">变化率</th>
-                  <th class="py-2.5 px-3 font-semibold text-right">σ(稳健z)</th>
-                  <th class="py-2.5 px-3 font-semibold text-right">斜率/天</th>
-                  <th class="py-2.5 px-3 font-semibold text-right">基线→近期</th>
-                  <th class="py-2.5 px-3 font-semibold text-right">样本</th>
-                  <th class="py-2.5 px-3 font-semibold">知识库诊断</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-50">
-                <template v-for="a in stageAlerts" :key="alertSnapKey(a)">
-                  <tr class="hover:bg-gray-50/50">
-                    <td class="py-2.5 px-3 whitespace-nowrap">
-                      <div class="font-bold text-gray-800">{{ a.display_name || a.metric }}</div>
-                      <div class="flex items-center gap-1.5 mt-0.5">
-                        <span v-if="a.unit" class="text-xs text-gray-300">{{ a.unit }}</span>
-                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500">阶段 {{ a.stage }}</span>
-                        <span v-if="a.note" class="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-500">{{ a.note }}</span>
-                      </div>
-                    </td>
-                    <td class="py-2.5 px-3 whitespace-nowrap"
-                      :title="mkLabel(a.mk_trend) + (a.mk_p != null ? ' (p=' + fmtNum(a.mk_p, 3) + ')' : '')">
-                      <span :class="['inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded', sevMeta(a.severity).cls]">
-                        <span>{{ dirArrow(a.direction) }}</span>{{ sevMeta(a.severity).label }}
-                      </span>
-                    </td>
-                    <td class="py-2.5 px-3 text-right tabular-nums font-semibold"
-                      :class="a.change_pct > 0 ? 'text-rose-500' : a.change_pct < 0 ? 'text-sky-600' : 'text-gray-400'">
-                      {{ a.change_pct == null ? '—' : (a.change_pct > 0 ? '+' : '') + fmtNum(a.change_pct) + '%' }}
-                    </td>
-                    <td class="py-2.5 px-3 text-right text-gray-600 tabular-nums">{{ a.robust_z == null ? '—' : fmtNum(a.robust_z) + 'σ' }}</td>
-                    <td class="py-2.5 px-3 text-right text-gray-500 tabular-nums">{{ a.sen_slope == null ? '—' : fmtNum(a.sen_slope, 4) }}</td>
-                    <td class="py-2.5 px-3 text-right text-gray-400 tabular-nums whitespace-nowrap">{{ fmtNum(a.baseline_median) }} → {{ fmtNum(a.recent_median) }}</td>
-                    <td class="py-2.5 px-3 text-right text-gray-500 tabular-nums">{{ a.sample_days }}天</td>
-                    <td class="py-2.5 px-3 whitespace-nowrap">
-                      <button @click="toggleDiag(a)"
-                        class="px-2 py-1 text-xs rounded-lg border hover:bg-gray-50"
-                        :class="alertDiagMap[alertSnapKey(a)] ? 'text-emerald-600 border-emerald-200 bg-emerald-50/50' : 'text-gray-500 border-gray-200'">
-                        {{ expandedDiagKey === alertSnapKey(a) ? '收起' : (alertDiagMap[alertSnapKey(a)] ? '已诊断 ▾' : '诊断详情 ▾') }}
-                      </button>
-                    </td>
-                  </tr>
-                  <tr v-if="expandedDiagKey === alertSnapKey(a)" class="bg-gray-50/40">
-                    <td colspan="8" class="py-3 px-4">
-                      <div v-if="diagLoadingKey === alertSnapKey(a)" class="text-xs text-gray-400">正在处理…（知识库 LLM 调用，较慢）</div>
-                      <div v-else-if="alertDiagMap[alertSnapKey(a)]">
-                        <div class="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">{{ alertDiagMap[alertSnapKey(a)].problem }}</div>
-                        <p v-if="alertDiagMap[alertSnapKey(a)].kb_evidence" class="text-[11px] text-gray-400 mt-2">📚 来源：{{ alertDiagMap[alertSnapKey(a)].kb_evidence }}</p>
-                        <div class="flex items-center gap-3 mt-2">
-                          <span v-if="alertDiagMap[alertSnapKey(a)].created_at" class="text-[11px] text-gray-300">{{ alertDiagMap[alertSnapKey(a)].created_at }}</span>
-                          <button @click="generateDiag(a)" class="text-[11px] text-indigo-500 hover:text-indigo-600">重新诊断</button>
-                        </div>
-                      </div>
-                      <div v-else class="flex items-center gap-3">
-                        <span class="text-xs text-gray-400">尚未生成知识库诊断。</span>
-                        <button @click="generateDiag(a)"
-                          class="px-2.5 py-1 text-xs rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700">立即诊断</button>
-                      </div>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
-          <div v-else-if="!stageAlertsLoading" class="mt-3 text-center py-8 text-gray-400 text-sm">
-            暂无 7 天分阶段漂移报警（连续参数在阶段内未见逐渐漂移，或尚未回填统计）。
-          </div>
-        </div>
-
-        <!-- AI 诊断结果 -->
-        <div v-if="diagResult || diagErr" class="bg-white rounded-xl border border-indigo-100 shadow-sm p-5">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-bold text-indigo-700">🩺 AI 自主诊断</h3>
-            <div class="flex items-center gap-2">
-              <span v-if="diagTrace.length" class="text-[10px] text-gray-400">调用了 {{ diagTrace.length }} 个分析工具</span>
-              <button @click="diagResult=''; diagErr=''; diagTrace=[]" class="text-xs text-gray-400 hover:text-gray-600">关闭</button>
-            </div>
-          </div>
-          <div v-if="diagTrace.length" class="flex flex-wrap gap-1 mb-3">
-            <span v-for="(t,i) in diagTrace" :key="i"
-              :class="['text-[10px] px-1.5 py-0.5 rounded', t.ok ? 'bg-indigo-50 text-indigo-500' : 'bg-rose-50 text-rose-500']">{{ t.tool }}</span>
-          </div>
-          <p v-if="diagErr" class="text-sm text-rose-500">{{ diagErr }}</p>
-          <div v-else class="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">{{ diagResult }}</div>
-        </div>
-
-        <!-- 总览表（即使无漂移也列出全部参数）-->
-        <div v-if="trendAlerts.length > 0" class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-gray-50">
-                <tr class="text-left text-xs text-gray-500 border-b border-gray-200 whitespace-nowrap">
-                  <th class="py-3 px-4 font-semibold">参数 / 阶段</th>
-                  <th class="py-3 px-3 font-semibold">近{{ trendDays }}天趋势</th>
-                  <th class="py-3 px-3 font-semibold">趋势判定</th>
-                  <th class="py-3 px-3 font-semibold text-right">变化率</th>
-                  <th class="py-3 px-3 font-semibold text-right">斜率/天</th>
-                  <th class="py-3 px-3 font-semibold text-right">均值</th>
-                  <th class="py-3 px-3 font-semibold text-right">中位</th>
-                  <th class="py-3 px-3 font-semibold text-right">方差</th>
-                  <th class="py-3 px-3 font-semibold text-right">标准差</th>
-                  <th class="py-3 px-3 font-semibold text-right">均差</th>
-                  <th class="py-3 px-3 font-semibold text-right">范围(min~max)</th>
-                  <th class="py-3 px-3 font-semibold text-right">样本</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-50">
-                <tr v-for="a in trendAlerts" :key="alertKey(a)" class="hover:bg-gray-50/50">
-                  <td class="py-2.5 px-4 whitespace-nowrap">
-                    <div class="font-bold text-gray-800">{{ a.display_name || a.metric }}</div>
-                    <div class="flex items-center gap-1.5 mt-0.5">
-                      <span v-if="a.unit" class="text-xs text-gray-300">{{ a.unit }}</span>
-                      <span v-if="a.stage !== null && a.stage !== undefined"
-                        class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500">阶段 {{ a.stage }}</span>
-                    </div>
-                  </td>
-                  <td class="py-2.5 px-3">
-                    <div :ref="el => setSparklineRef(alertKey(a), el)" style="width: 120px; height: 34px"></div>
-                  </td>
-                  <td class="py-2.5 px-3 whitespace-nowrap"
-                    :title="mkLabel(a.mk_trend) + (a.mk_p != null ? ' (p=' + fmtNum(a.mk_p, 3) + ')' : '')">
-                    <span :class="['inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded', sevMeta(a.severity).cls]">
-                      <span>{{ dirArrow(a.direction) }}</span>{{ sevMeta(a.severity).label }}
-                    </span>
-                  </td>
-                  <td class="py-2.5 px-3 text-right tabular-nums font-semibold"
-                    :class="a.change_pct > 0 ? 'text-rose-500' : a.change_pct < 0 ? 'text-sky-600' : 'text-gray-400'">
-                    {{ a.change_pct == null ? '—' : (a.change_pct > 0 ? '+' : '') + fmtNum(a.change_pct) + '%' }}
-                  </td>
-                  <td class="py-2.5 px-3 text-right text-gray-500 tabular-nums">{{ a.sen_slope == null ? '—' : fmtNum(a.sen_slope, 4) }}</td>
-                  <td class="py-2.5 px-3 text-right text-gray-800 font-semibold tabular-nums">{{ fmtNum(a.mean) }}</td>
-                  <td class="py-2.5 px-3 text-right text-gray-600 tabular-nums">{{ fmtNum(a.median) }}</td>
-                  <td class="py-2.5 px-3 text-right text-gray-600 tabular-nums">{{ fmtNum(a.variance) }}</td>
-                  <td class="py-2.5 px-3 text-right text-gray-600 tabular-nums">{{ fmtNum(a.std) }}</td>
-                  <td class="py-2.5 px-3 text-right text-gray-600 tabular-nums">{{ fmtNum(a.daily_mad) }}</td>
-                  <td class="py-2.5 px-3 text-right text-gray-400 tabular-nums whitespace-nowrap">{{ fmtNum(a.min) }} ~ {{ fmtNum(a.max) }}</td>
-                  <td class="py-2.5 px-3 text-right text-gray-500 tabular-nums">{{ a.n_days }}天</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div v-else-if="!trendLoading" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
-          <div class="text-4xl mb-3">🗂️</div>
-          <p class="text-sm">暂无统计数据。若首次使用，请点「立即计算(90天)」回填该设备统计后再看。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- 参数画像（AI 识别参数类型/角色/正常区间/spec，工艺确认后生效）-->
-    <div v-else-if="dataMode === 'profile'">
-      <div v-if="!selectedDevice" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
-        <div class="text-4xl mb-3">🧬</div>
-        <p class="text-sm">请从上方选择设备</p>
-      </div>
-      <div v-else class="space-y-4">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-          <div class="flex items-center justify-between flex-wrap gap-3">
-            <div class="flex items-center gap-3 flex-wrap">
-              <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">参数画像 · 自适应</span>
-              <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 font-bold">已确认 {{ profileConfirmedCount }}</span>
-              <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600">待确认 {{ profileRows.length - profileConfirmedCount }}</span>
-              <label class="flex items-center gap-1 text-xs text-gray-500">
-                <input type="checkbox" v-model="profileUseLlm" class="w-3.5 h-3.5" /> 用 AI 提语义
-              </label>
-            </div>
-            <div class="flex items-center gap-2">
-              <button @click="loadProfile" :disabled="profileLoading"
-                class="px-3 py-1.5 text-xs rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 disabled:opacity-50">刷新</button>
-              <button @click="runSuggest" :disabled="profileSuggesting"
-                title="对全部参数自动识别类型/角色/正常区间(写为待确认建议)"
-                class="px-3 py-1.5 text-xs rounded-lg bg-violet-500 text-white font-bold hover:bg-violet-600 disabled:opacity-50">
-                {{ profileSuggesting ? 'AI 识别中…' : 'AI 识别' }}
-              </button>
-            </div>
-          </div>
-          <p v-if="profileNote" class="text-xs mt-2" :class="profileNoteErr ? 'text-rose-500' : 'text-amber-600'">{{ profileNote }}</p>
-          <p class="text-[11px] text-gray-300 mt-2">类型由统计签名(无名也能判)+DB type+AI 综合给出"建议"；正常区间从历史精确学习；Cpk 用确认的 spec。高风险阈值须确认后生效。</p>
-        </div>
-
-        <div v-if="profileRows.length > 0" class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-gray-50">
-                <tr class="text-left text-xs text-gray-500 border-b border-gray-200 whitespace-nowrap">
-                  <th class="py-3 px-4 font-semibold">参数</th>
-                  <th class="py-3 px-3 font-semibold">类型</th>
-                  <th class="py-3 px-3 font-semibold">角色 / 类别</th>
-                  <th class="py-3 px-3 font-semibold text-center">盯</th>
-                  <th class="py-3 px-3 font-semibold text-right">正常区间</th>
-                  <th class="py-3 px-3 font-semibold">规格(spec_low / spec_high)</th>
-                  <th class="py-3 px-3 font-semibold text-right">Cpk</th>
-                  <th class="py-3 px-3 font-semibold text-center">来源/置信</th>
-                  <th class="py-3 px-3 font-semibold text-center">状态</th>
-                  <th class="py-3 px-3 font-semibold"></th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-50">
-                <tr v-for="row in profileRows" :key="row.p_name" class="hover:bg-gray-50/50 align-top">
-                  <td class="py-2 px-4 whitespace-nowrap">
-                    <div class="font-bold text-gray-800">{{ row.display_name || row.p_name }}</div>
-                    <div class="text-[10px] text-gray-300">{{ row.p_name }}<span v-if="row.unit"> · {{ row.unit }}</span></div>
-                  </td>
-                  <td class="py-2 px-3">
-                    <select v-model="row.ptype" class="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white">
-                      <option v-for="t in PTYPES" :key="t" :value="t">{{ t }}</option>
-                    </select>
-                  </td>
-                  <td class="py-2 px-3">
-                    <input v-model="row.role" class="text-xs border border-gray-200 rounded px-1 py-0.5 w-28" />
-                    <input v-model="row.category" class="text-xs border border-gray-200 rounded px-1 py-0.5 w-24 mt-0.5" />
-                  </td>
-                  <td class="py-2 px-3 text-center">
-                    <input type="checkbox" v-model="row.monitor" class="w-4 h-4" />
-                  </td>
-                  <td class="py-2 px-3 text-right text-xs text-gray-500 tabular-nums whitespace-nowrap">
-                    {{ fmtNum(row.bands && row.bands.normal_low) }} ~ {{ fmtNum(row.bands && row.bands.normal_high) }}
-                  </td>
-                  <td class="py-2 px-3 whitespace-nowrap">
-                    <input v-model.number="row._spec_low" type="number" step="any" placeholder="LSL"
-                      class="text-xs border border-gray-200 rounded px-1 py-0.5 w-20" />
-                    <span class="text-gray-300 mx-0.5">/</span>
-                    <input v-model.number="row._spec_high" type="number" step="any" placeholder="USL"
-                      class="text-xs border border-gray-200 rounded px-1 py-0.5 w-20" />
-                  </td>
-                  <td class="py-2 px-3 text-right tabular-nums font-semibold"
-                    :class="cpkCls(row._cpk)">{{ row._cpk == null ? '—' : fmtNum(row._cpk, 2) }}</td>
-                  <td class="py-2 px-3 text-center text-[10px] text-gray-400 whitespace-nowrap">
-                    {{ row.source && row.source.ptype }} · {{ Math.round((row.confidence||0)*100) }}%
-                  </td>
-                  <td class="py-2 px-3 text-center">
-                    <span :class="['text-[10px] px-1.5 py-0.5 rounded', row.confirmed ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600']">
-                      {{ row.confirmed ? '已确认' : '建议' }}
-                    </span>
-                  </td>
-                  <td class="py-2 px-3">
-                    <div class="flex items-center gap-1">
-                      <button @click="recalcSpec(row)" :disabled="row._recalc"
-                        class="text-xs px-2 py-1 rounded bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-50"
-                        :title="row._recalc_result ? `中位数=${row._recalc_result.median} μ=${row._recalc_result.mean} σ=${row._recalc_result.std} 过滤${row._recalc_result.filtered_count}/${row._recalc_result.total_count}条` : '基于原始数据+CPK=1.33 重算上下限'">
-                        {{ row._recalc ? '计算中...' : '自动设置上下限' }}
-                      </button>
-                      <button @click="recalcCpkRow(row)" :disabled="row._recalcCpk"
-                        class="text-xs px-2 py-1 rounded bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
-                        :title="row._recalcCpkResult ? `全量数据 CPK=${row._recalcCpkResult.cpk} CPU=${row._recalcCpkResult.cpu} CPL=${row._recalcCpkResult.cpl} μ=${row._recalcCpkResult.mean} σ=${row._recalcCpkResult.std}` : '用当前上下限 + 全量原始数据直接算 CPK'">
-                        {{ row._recalcCpk ? '计算中...' : '重算' }}
-                      </button>
-                      <button @click="confirmRow(row)" :disabled="row._saving"
-                        class="text-xs px-2 py-1 rounded bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50">确认</button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div v-else-if="!profileLoading" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
-          <div class="text-4xl mb-3">🧬</div>
-          <p class="text-sm">尚无参数画像。点「AI 识别」让系统自动识别该设备所有参数的类型与正常区间。</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- 预测维护：RUL/触限ETA · 跨设备对标 · 故障前兆 -->
-    <div v-else-if="dataMode === 'predictive'">
-      <div v-if="!selectedDevice" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
-        <div class="text-4xl mb-3">🔮</div>
-        <p class="text-sm">请从上方选择设备</p>
-      </div>
-      <div v-else class="space-y-4">
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-center justify-between flex-wrap gap-3">
-          <div class="flex items-center gap-3 flex-wrap">
-            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">预测维护 · RUL / 对标 / 前兆</span>
-            <span v-if="predComputedAt" class="text-[11px] text-gray-300">数据计算于 {{ predComputedAt }}（读缓存）</span>
-          </div>
-          <button @click="loadPredictive(true)" :disabled="predLoading"
-            title="重新现算并刷新缓存"
-            class="px-3 py-1.5 text-xs rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 disabled:opacity-50">
-            {{ predLoading ? '计算中…' : '重新计算' }}
-          </button>
-        </div>
-
-        <!-- RUL / 触限 ETA -->
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div class="px-4 py-2.5 bg-gray-50 text-xs font-bold text-gray-600 border-b border-gray-100">⏳ 剩余寿命 / 触限 ETA <span class="text-gray-300 font-normal">按趋势斜率外推到画像上下限</span></div>
-          <div v-if="predRul.length" class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-white"><tr class="text-left text-xs text-gray-400 border-b border-gray-100">
-                <th class="py-2 px-4 font-semibold">参数</th><th class="py-2 px-3 font-semibold">方向</th>
-                <th class="py-2 px-3 font-semibold text-right">当前</th><th class="py-2 px-3 font-semibold text-right">目标限</th>
-                <th class="py-2 px-3 font-semibold text-right">斜率/天</th><th class="py-2 px-3 font-semibold text-right">预计触限</th>
-                <th class="py-2 px-3 font-semibold text-right">ETA</th></tr></thead>
-              <tbody class="divide-y divide-gray-50">
-                <tr v-for="x in predRul" :key="x.p_name" class="hover:bg-gray-50/50">
-                  <td class="py-2 px-4 font-semibold text-gray-800">{{ x.display_name }}<span class="text-gray-300 text-xs ml-1">{{ x.unit }}</span></td>
-                  <td class="py-2 px-3">{{ x.direction === 'up' ? '↑ 升' : '↓ 降' }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums">{{ fmtNum(x.current) }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums">{{ fmtNum(x.target_limit) }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums text-gray-500">{{ fmtNum(x.slope_per_day, 4) }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums">{{ x.eta_date }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums font-bold" :class="x.eta_days < 14 ? 'text-rose-500' : x.eta_days < 60 ? 'text-amber-500' : 'text-gray-600'">{{ x.eta_days }}天</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p v-else class="px-4 py-6 text-xs text-gray-400 text-center">暂无显著趋势触限项（需画像有 spec + 足够历史）。</p>
-        </div>
-
-        <!-- 跨设备对标 -->
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div class="px-4 py-2.5 bg-gray-50 text-xs font-bold text-gray-600 border-b border-gray-100">📊 跨设备对标 <span class="text-gray-300 font-normal">同名参数 z 分，找与同伴不一样的</span></div>
-          <div v-if="predBench.length" class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-white"><tr class="text-left text-xs text-gray-400 border-b border-gray-100">
-                <th class="py-2 px-4 font-semibold">参数</th><th class="py-2 px-3 font-semibold text-right">本机均值</th>
-                <th class="py-2 px-3 font-semibold text-right">同群均值</th><th class="py-2 px-3 font-semibold text-right">设备数</th>
-                <th class="py-2 px-3 font-semibold text-right">z 分</th><th class="py-2 px-3 font-semibold">判定</th></tr></thead>
-              <tbody class="divide-y divide-gray-50">
-                <tr v-for="x in predBench" :key="x.p_name" class="hover:bg-gray-50/50">
-                  <td class="py-2 px-4 font-semibold text-gray-800">{{ x.display_name }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums">{{ fmtNum(x.this_mean) }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums text-gray-500">{{ fmtNum(x.fleet_mean) }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums text-gray-400">{{ x.fleet_n }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums font-semibold" :class="x.outlier ? 'text-rose-500' : 'text-gray-600'">{{ x.z == null ? '—' : fmtNum(x.z) }}</td>
-                  <td class="py-2 px-3"><span v-if="x.outlier" class="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-500">离群</span><span v-else class="text-gray-300 text-xs">—</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p v-else class="px-4 py-6 text-xs text-gray-400 text-center">暂无对标数据（需 ≥3 台设备共享同名参数）。</p>
-        </div>
-
-        <!-- 故障前兆 -->
-        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <div class="px-4 py-2.5 bg-gray-50 text-xs font-bold text-gray-600 border-b border-gray-100">⚡ 故障前兆自学习 <span class="text-gray-300 font-normal">历史告警前偏移最大的参数</span></div>
-          <div v-if="predPrec.precursors && predPrec.precursors.length" class="overflow-x-auto">
-            <p class="px-4 pt-2 text-[11px] text-gray-400">基于近窗 {{ predPrec.n_events }} 次报警、告警前 {{ predPrec.pre_min }} 分钟。{{ predPrec.note }}</p>
-            <table class="w-full text-sm">
-              <thead class="bg-white"><tr class="text-left text-xs text-gray-400 border-b border-gray-100">
-                <th class="py-2 px-4 font-semibold">参数</th><th class="py-2 px-3 font-semibold text-right">平均偏移(|z|)</th>
-                <th class="py-2 px-3 font-semibold text-right">命中率</th><th class="py-2 px-3 font-semibold text-right">出现事件</th></tr></thead>
-              <tbody class="divide-y divide-gray-50">
-                <tr v-for="x in predPrec.precursors" :key="x.p_name" class="hover:bg-gray-50/50">
-                  <td class="py-2 px-4 font-semibold text-gray-800">{{ x.display_name }}<span class="text-gray-300 text-xs ml-1">{{ x.unit }}</span></td>
-                  <td class="py-2 px-3 text-right tabular-nums font-semibold" :class="x.avg_abs_z >= 2 ? 'text-rose-500' : 'text-gray-600'">{{ fmtNum(x.avg_abs_z) }}</td>
-                  <td class="py-2 px-3 text-right tabular-nums">{{ Math.round(x.hit_rate * 100) }}%</td>
-                  <td class="py-2 px-3 text-right tabular-nums text-gray-400">{{ x.events_seen }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p v-else class="px-4 py-6 text-xs text-gray-400 text-center">{{ predPrec.note || '暂无前兆数据（需窗口内有报警事件 + 连续参数基线）。' }}</p>
-        </div>
-      </div>
-    </div>
-
-    <template v-else>
-    <!-- Loading -->
-    <div v-if="loading" class="text-center py-16 text-gray-400">
-      <div class="text-3xl mb-3 animate-spin">⏳</div>
-      <p>正在加载参数数据...</p>
-    </div>
-
-    <!-- Empty State -->
-    <div v-else-if="!selectedDevice" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
+    <div v-if="!selectedDevice" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
       <div class="text-4xl mb-3">🔧</div>
-      <p class="text-sm">请从上方选择设备并点击查询</p>
+      <p class="text-sm">请从上方选择设备</p>
     </div>
 
-    <div v-else-if="seriesKeys.length === 0" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
-      <div class="text-4xl mb-3">📉</div>
-      <p class="text-sm">该时间段内暂无参数数据</p>
-    </div>
-
-    <!-- Chart -->
-    <div v-else class="space-y-6">
+    <!-- ① 状态：设备状态划分 + 原始参数曲线 -->
+    <div v-else-if="activeStep === 1" class="space-y-6">
       <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
         <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div class="flex items-center gap-3">
-            <span v-if="dataMode === 'features'" class="text-xs font-bold text-indigo-500 uppercase tracking-wider bg-indigo-50 px-2 py-0.5 rounded">📊 特征视图</span>
-            <span v-else class="text-xs font-bold text-gray-400 uppercase tracking-wider">参数趋势</span>
-            <!-- 仅运行状态开关（参数视图 + 特征视图通用）-->
+          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">
+            ① 状态划分<span v-if="pulseParam"> — 基于脉搏 {{ displayNames[pulseParam] || pulseParam }}</span>
+          </span>
+          <div class="flex items-center gap-2 text-xs text-gray-500">
+            分析天数：
+            <button v-for="d in [1,3,7,30]" :key="d" @click="stateDays = d; startStateAnalysis()"
+              class="px-2 py-0.5 rounded" :class="stateDays === d ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-100'">{{ d }}天</button>
+          </div>
+        </div>
+        <div v-if="!stateResult" class="text-center py-8 text-gray-400 text-sm">点上方「分析天数」开始状态划分</div>
+        <div v-else-if="stateResult.source === 'loading'" class="text-center py-12 text-gray-400">⏳ 分析中...</div>
+        <div v-else-if="stateResult.source === 'error'" class="text-center py-12 text-gray-400">{{ stateResult.msg }}</div>
+        <template v-else>
+          <div class="space-y-3">
+            <div v-if="stateResult.truncate_note" class="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-700">
+              ⚠ {{ stateResult.truncate_note }}
+            </div>
+            <!-- 状态切片图：运行/非运行/离线 按时间轴铺开 -->
+            <div v-if="stateResult.timeline?.length" class="border border-gray-100 rounded-lg p-3">
+              <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+                <span class="text-xs font-bold text-gray-500">状态切片（按时间轴）</span>
+                <div class="flex items-center gap-3 text-[11px] text-gray-500">
+                  <span class="flex items-center gap-1"><i class="inline-block w-3 h-2 rounded-sm" style="background:#22c55e"></i>运行 {{ stateResult.timeline_totals?.running_h }}h</span>
+                  <span class="flex items-center gap-1"><i class="inline-block w-3 h-2 rounded-sm" style="background:#f59e0b"></i>非运行 {{ stateResult.timeline_totals?.idle_h }}h</span>
+                  <span class="flex items-center gap-1"><i class="inline-block w-3 h-2 rounded-sm" style="background:#d1d5db"></i>离线 {{ stateResult.timeline_totals?.offline_h }}h</span>
+                </div>
+              </div>
+              <div ref="stateTimelineEl" class="w-full" style="height: 200px"></div>
+              <p class="text-[10px] text-gray-400 mt-1">
+                共 {{ stateResult.timeline_totals?.segments }} 段。离线＝脉搏参数连续 {{ stateResult.timeline_gap_minutes }} 分钟以上没有上报（数据断档），
+                与上方卡片按“总时长−运行−非运行”反推的离线时长口径不同，故两处数值可能有差异。
+              </p>
+            </div>
+              <div class="grid grid-cols-3 gap-3 text-center">
+                <div class="bg-green-50 rounded-lg p-3"><div class="text-green-700 font-bold text-lg">{{ stateResult.running_hours }}h</div><div class="text-green-600 text-xs">🏠 运行（房子里）</div></div>
+                <div class="bg-amber-50 rounded-lg p-3"><div class="text-amber-700 font-bold text-lg">{{ stateResult.idle_hours }}h</div><div class="text-amber-600 text-xs">🌿 非运行（草坪上）</div></div>
+                <div class="bg-gray-100 rounded-lg p-3"><div class="text-gray-700 font-bold text-lg">{{ stateResult.offline_hours }}h</div><div class="text-gray-500 text-xs">💤 离线</div></div>
+              </div>
+              <div v-if="stateResult.ai_insight" class="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700 leading-relaxed">
+                💡 AI 洞察：{{ stateResult.ai_insight }}
+              </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- 原始参数曲线 -->
+      <div v-if="loading" class="text-center py-16 text-gray-400">
+        <div class="text-3xl mb-3 animate-spin">⏳</div>
+        <p>正在加载参数数据...</p>
+      </div>
+      <div v-else-if="seriesKeys.length === 0" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
+        <div class="text-4xl mb-3">📉</div>
+        <p class="text-sm">该时间段内暂无参数数据</p>
+      </div>
+      <div v-else class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div class="flex items-center gap-3 flex-wrap">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">参数趋势</span>
             <label v-if="runningPeriods.length > 0" class="flex items-center gap-1.5 cursor-pointer select-none" title="只显示设备运行(code 1)时段内的数据点">
               <input type="checkbox" v-model="showRunningOnly" @change="onRunningOnlyToggle" class="sr-only peer" />
               <span class="w-8 h-4 rounded-full bg-gray-200 peer-checked:bg-green-500 transition-colors relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-3 after:h-3 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
               <span class="text-xs text-gray-500">仅运行状态</span>
             </label>
-            <template v-if="dataMode === 'params'">
             <span v-if="runningPeriods.length > 0" class="flex items-center gap-1 text-xs text-green-600">
               <span class="inline-block w-4 h-1.5 rounded-sm bg-green-400/40"></span>
               绿色区域 = 运行时段
@@ -639,18 +220,12 @@
               <option :value="0.05">敏感度: 中</option>
               <option :value="0.10">敏感度: 低</option>
             </select>
-            </template>
           </div>
           <span class="text-xs text-gray-400">
-            <template v-if="dataMode === 'features'">
-              {{ seriesKeys.length }} 个参数 · 每参数 4 张特征图
-            </template>
-            <template v-else>
-              {{ visibleKeys.length }} / {{ seriesKeys.length }} 个参数
-              <span v-if="aggInterval" class="ml-1 text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
-                已按 {{ aggInterval }} 聚合
-              </span>
-            </template>
+            {{ visibleKeys.length }} / {{ seriesKeys.length }} 个参数
+            <span v-if="aggInterval" class="ml-1 text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+              已按 {{ aggInterval }} 聚合
+            </span>
           </span>
         </div>
 
@@ -710,23 +285,7 @@
           </div>
         </div>
 
-        <!-- 特征视图：参数选择器 -->
-        <div v-if="dataMode === 'features'" class="flex flex-wrap items-center gap-1.5 mb-3 max-h-[96px] overflow-y-auto py-1">
-          <span class="text-xs text-gray-400 mr-1 self-center">选择参数:</span>
-          <button
-            v-for="p in featureParamList" :key="p.key"
-            @click="selectFeatureParam(p.key)"
-            class="px-2.5 py-1 rounded-full text-xs font-medium border transition-all"
-            :class="selectedFeatureParam === p.key
-              ? 'bg-indigo-500 text-white border-indigo-500'
-              : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'"
-          >
-            {{ p.label }}<span v-if="p.unit" class="opacity-60 ml-0.5">{{ p.unit }}</span>
-          </button>
-        </div>
-
-        <!-- Parameter toggles - above chart, not overlapping (仅原始参数模式) -->
-        <div v-if="dataMode === 'params'" class="flex flex-wrap gap-1.5 mb-4 max-h-[120px] overflow-y-auto py-1">
+        <div class="flex flex-wrap gap-1.5 mb-4 max-h-[120px] overflow-y-auto py-1">
           <button
             v-for="(key, idx) in seriesKeys"
             :key="key"
@@ -760,77 +319,262 @@
           </button>
         </div>
 
-        <!-- 原始参数模式：单一大图 -->
-        <div v-if="dataMode === 'params'" ref="chartContainer" class="w-full" :style="{ height: chartHeight }"></div>
-
-        <!-- 特征视图模式：选中参数的 4 张特征图 -->
-        <div v-else>
-          <div v-if="selectedFeatureParam" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div v-for="fc in FEATURE_CHARTS" :key="fc.key" class="border border-gray-100 rounded-lg p-3">
-              <div class="text-xs font-bold text-gray-600 mb-1">
-                {{ fc.title }}
-                <span class="text-gray-400 font-normal ml-1">{{ fc.subtitle }}</span>
-              </div>
-              <div :ref="el => setFeatureChartRef(fc.key, el)" class="w-full" style="height: 240px"></div>
-            </div>
-          </div>
-          <div v-else class="text-center py-12 text-gray-400 text-sm">
-            请在上方选择一个参数查看其特征图
-          </div>
-        </div>
-      </div>
-
-      <!-- AI Analysis History -->
-      <div v-if="showAnalysisLog" class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="font-headline text-base font-semibold text-gray-900">历史 AI 分析</h2>
-          <span class="text-xs text-gray-400">{{ analysisLogLoading ? '加载中...' : `共 ${analysisLogItems.length} 条` }}</span>
-        </div>
-        <div v-if="!analysisLogLoading && analysisLogItems.length === 0" class="text-xs text-gray-400">
-          暂无历史分析记录，点击"AI 分析"生成第一条。
-        </div>
-        <ul v-else class="divide-y divide-gray-100">
-          <li v-for="item in analysisLogItems" :key="item.id"
-            class="py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-gray-50 rounded-lg px-2"
-            @click="viewAnalysisLogItem(item)"
-          >
-            <div class="min-w-0">
-              <div class="text-sm text-gray-800 truncate">{{ item.start_time }} ~ {{ item.end_time }}</div>
-              <div class="text-xs text-gray-400">{{ item.created_at }}{{ item.running_only ? ' · 仅运行时段' : '' }}</div>
-            </div>
-            <span class="text-xs text-violet-500 shrink-0">查看 →</span>
-          </li>
-        </ul>
-      </div>
-
-      <!-- AI Analysis Result -->
-      <div v-if="analysisResult" class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="font-headline text-base font-semibold text-gray-900">
-            AI 分析结果<span v-if="analysisResultMeta" class="ml-2 text-xs font-normal text-gray-400">{{ analysisResultMeta }}</span>
-          </h2>
-          <button
-            @click="analysisResult = ''; analysisResultMeta = ''"
-            class="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-          >关闭</button>
-        </div>
-        <div class="prose prose-sm max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">
-          {{ analysisResult }}
-        </div>
-      </div>
-
-      <!-- Analysis Error -->
-      <div v-if="analysisError" class="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-        {{ analysisError }}
+        <div ref="chartContainer" class="w-full" :style="{ height: chartHeight }"></div>
       </div>
     </div>
-    </template>
+
+    <!-- ② 效率：资产利用率 vs 设备可用率 -->
+    <div v-else-if="activeStep === 2" class="space-y-6">
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">② 效率 — 资产利用率（老板视角） vs 设备可用率（班长视角）</span>
+          <div class="flex items-center gap-2 text-xs text-gray-500">
+            分析天数：
+            <button v-for="d in [1,3,7,30]" :key="d" @click="stateDays = d; startStateAnalysis()"
+              class="px-2 py-0.5 rounded" :class="stateDays === d ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-100'">{{ d }}天</button>
+          </div>
+        </div>
+        <div v-if="!stateResult" class="text-center py-8 text-gray-400 text-sm">点上方「分析天数」开始计算</div>
+        <div v-else-if="stateResult.source === 'loading'" class="text-center py-12 text-gray-400">⏳ 分析中...</div>
+        <div v-else-if="stateResult.source === 'error'" class="text-center py-12 text-gray-400">{{ stateResult.msg }}</div>
+        <template v-else>
+          <div class="space-y-3">
+            <div v-if="stateResult.truncate_note" class="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-700">
+              ⚠ {{ stateResult.truncate_note }}
+            </div>
+              <div class="grid grid-cols-2 gap-3 text-center">
+                <div class="bg-indigo-50 rounded-lg p-3">
+                  <div class="text-indigo-700 font-bold text-xl">{{ stateResult.utilization }}%</div>
+                  <div class="text-indigo-600 text-xs">🏢 资产利用率（老板视角）</div>
+                  <div class="text-gray-400 text-[10px]">运行 / {{ stateResult.total_hours }}h × 100%</div>
+                </div>
+                <div class="bg-emerald-50 rounded-lg p-3">
+                  <div class="text-emerald-700 font-bold text-xl">{{ stateResult.availability }}%</div>
+                  <div class="text-emerald-600 text-xs">🔧 设备可用率（班长视角）</div>
+                  <div class="text-gray-400 text-[10px]">(运行+非运行) / {{ stateResult.total_hours }}h × 100%</div>
+                </div>
+              </div>
+              <div v-if="stateResult.daily_breakdown?.length" class="border rounded-lg">
+                <div class="px-3 py-2 bg-gray-50 text-xs font-bold text-gray-500 border-b">每日明细（点击展开）</div>
+                <div v-for="d in stateResult.daily_breakdown" :key="d.date"
+                  class="px-3 py-1.5 border-b border-gray-50 text-xs flex items-center gap-3 cursor-pointer hover:bg-gray-50"
+                  @click="d._open = !d._open">
+                  <span class="w-20">{{ d.date.slice(5) }}</span>
+                  <span class="text-green-600 w-12 text-right">{{ d.running_h }}h</span>
+                  <span class="text-amber-600 w-12 text-right">{{ d.idle_h }}h</span>
+                  <span class="text-gray-400 w-12 text-right">{{ d.offline_h }}h</span>
+                  <span class="font-bold w-12 text-right">{{ d.utilization }}%</span>
+                  <span class="text-gray-400">{{ d.segments }}次切换</span>
+                </div>
+              </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- ③ KPI：产量/OEE/节拍/能耗 -->
+    <div v-else-if="activeStep === 3" class="space-y-6">
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">③ KPI — 产量 / OEE / 节拍 / 能耗</span>
+          <div class="flex items-center gap-2 text-xs text-gray-500">
+            分析天数：
+            <button v-for="d in [1,3,7,30]" :key="d" @click="kpiDays = d; startKpiAnalysis()"
+              class="px-2 py-0.5 rounded" :class="kpiDays === d ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-100'">{{ d }}天</button>
+          </div>
+        </div>
+        <div v-if="!kpiResult" class="text-center py-8 text-gray-400 text-sm">点上方「分析天数」开始计算 KPI</div>
+        <div v-else class="space-y-3">
+            <div v-if="kpiResult.source === 'loading'" class="text-center py-12 text-gray-400">⏳ 计算中...</div>
+            <div v-else-if="kpiResult.source === 'error'" class="text-center py-12 text-gray-400">{{ kpiResult.msg }}</div>
+            <template v-else>
+              <div v-if="kpiCards.length > 1" class="text-xs text-gray-500 text-center">
+                按"房子形状"识别出 {{ kpiCards.length - 1 }} 种产品型号，最后一张是设备整体汇总
+              </div>
+              <div v-if="kpiResult.type_insight" class="bg-amber-50 rounded-lg p-3 text-xs text-amber-800 leading-relaxed">
+                🔍 型号划分判断：{{ kpiResult.type_insight }}
+              </div>
+
+              <div v-for="kpi in kpiCards" :key="kpi.type_label" class="border border-gray-100 rounded-lg p-3 space-y-3">
+                <div class="text-sm font-bold text-gray-700">
+                  {{ kpi.type_label }}
+                  <span v-if="kpi.batch_count != null" class="text-xs font-normal text-gray-400">（{{ kpi.batch_count }}个循环）</span>
+                </div>
+                <div v-if="kpi.signature" class="text-[10px] text-gray-400">特征：{{ kpi.signature }}</div>
+
+                <div class="grid grid-cols-3 gap-3 text-center">
+                  <div class="bg-sky-50 rounded-lg p-3">
+                    <div class="text-sky-700 font-bold text-lg">{{ kpi.total_cycles }}</div>
+                    <div class="text-sky-600 text-xs">总循环数（房子）</div>
+                  </div>
+                  <div class="bg-green-50 rounded-lg p-3">
+                    <div class="text-green-700 font-bold text-lg">{{ kpi.output_count }}</div>
+                    <div class="text-green-600 text-xs">产量（已剔除空跑{{ kpi.empty_run_count }}次）</div>
+                  </div>
+                  <div class="bg-violet-50 rounded-lg p-3">
+                    <div class="text-violet-700 font-bold text-lg">{{ kpi.pass_rate != null ? kpi.pass_rate + '%' : '—' }}</div>
+                    <div class="text-violet-600 text-xs">合格率<span v-if="kpi.quality_status !== 'ok'">（{{ kpi.quality_status === 'no_confirmed_spec' ? '暂无已确认规格限' : kpi.quality_status }}）</span></div>
+                  </div>
+                </div>
+
+                <div class="bg-gray-50 rounded-lg p-3">
+                  <div class="text-xs text-gray-500 mb-2">OEE = 可用率 × 性能效率 × 合格率</div>
+                  <div class="flex items-center justify-center gap-2 text-sm">
+                    <span class="text-emerald-700 font-medium">{{ kpi.availability != null ? kpi.availability + '%' : '—' }}</span>
+                    <span class="text-gray-300">×</span>
+                    <span class="text-amber-700 font-medium">{{ kpi.performance != null ? kpi.performance : '—' }}</span>
+                    <span class="text-gray-300">×</span>
+                    <span class="text-violet-700 font-medium">{{ kpi.pass_rate != null ? (kpi.pass_rate / 100).toFixed(2) : '—' }}</span>
+                    <span class="text-gray-300">=</span>
+                    <span class="text-gray-900 font-bold text-lg">{{ kpi.oee != null ? kpi.oee + '%' : '—' }}</span>
+                  </div>
+                  <div v-if="kpi.oee_note" class="text-center text-[10px] text-gray-400 mt-1">{{ kpi.oee_note }}</div>
+                  <div class="text-center text-[10px] text-gray-400 mt-1">性能效率 = P10最快批次节拍 / 实际平均节拍（近似值，非工艺标准节拍）</div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="bg-white border border-gray-100 rounded-lg p-3">
+                    <div class="text-xs text-gray-500 mb-1">节拍（有效批次）</div>
+                    <div class="text-xs text-gray-700">均值 {{ kpi.cycle_time.mean_min ?? '—' }} 分钟</div>
+                    <div class="text-xs text-gray-700">中位 {{ kpi.cycle_time.median_min ?? '—' }} 分钟</div>
+                    <div class="text-xs text-gray-700">P10 {{ kpi.cycle_time.p10_min ?? '—' }} 分钟</div>
+                  </div>
+                  <div class="bg-white border border-gray-100 rounded-lg p-3">
+                    <div class="text-xs text-gray-500 mb-1">能耗</div>
+                    <div class="text-xs text-gray-700">有效 {{ kpi.energy.valid_kwh }}</div>
+                    <div class="text-xs text-gray-700">空跑 {{ kpi.energy.empty_run_kwh }}</div>
+                    <div class="text-xs text-gray-700">单件 {{ kpi.energy.per_unit_kwh ?? '—' }}</div>
+                  </div>
+                </div>
+
+                <div v-if="kpi.empty_run_status !== 'ok'" class="text-[10px] text-gray-400 text-center">
+                  空跑判定：{{ kpi.empty_run_status === 'no_weight_param' ? '该设备没有已识别的重量类参数，本次未剔除空跑（产量=总循环数）' : kpi.empty_run_status }}
+                </div>
+
+                <div v-if="kpi.ai_insight" class="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-800 leading-relaxed">
+                  💡 {{ kpi.ai_insight }}
+                </div>
+              </div>
+            </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ 阶段：阶段分析 + CPK/公差/能耗逐段 -->
+    <div v-else-if="activeStep === 4" class="space-y-6">
+      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">④ 阶段 — CPK / 公差 / 能耗逐段分析</span>
+          <div class="flex items-center gap-2 text-xs text-gray-500">
+            分析天数：
+            <button v-for="d in [3,7,15,30]" :key="d" @click="stageCpkDays = d; startStageCpkAnalysis()"
+              class="px-2 py-0.5 rounded" :class="stageCpkDays === d ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-100'">{{ d }}天</button>
+          </div>
+        </div>
+        <div v-if="!stageCpkResult" class="text-center py-8 text-gray-400 text-sm">点上方「分析天数」开始逐段 CPK 分析</div>
+        <div v-else class="space-y-3">
+            <div v-if="stageCpkResult.source === 'loading'" class="text-center py-12 text-gray-400">⏳ 计算中...</div>
+            <div v-else-if="stageCpkResult.source === 'error'" class="text-center py-12 text-gray-400">{{ stageCpkResult.msg }}</div>
+            <template v-else>
+              <div v-for="s in stageCpkResult.stages" :key="s.stage" class="border border-gray-100 rounded-lg p-3">
+                <div class="text-xs font-bold text-gray-700 mb-2">阶段 {{ s.stage }}</div>
+
+                <div class="text-xs text-gray-600 mb-1" v-if="s.duration_cpk">
+                  <template v-if="s.duration_cpk.cpk != null">
+                    时长：{{ s.duration_cpk.mean_min }}±{{ s.duration_cpk.std_min }}分钟，
+                    规格[{{ s.duration_cpk.spec_low_min }}, {{ s.duration_cpk.spec_high_min }}]，
+                    CPK={{ s.duration_cpk.cpk }}，超差 {{ s.duration_cpk.out_of_spec_count }}/{{ s.duration_cpk.n }}
+                    ({{ s.duration_cpk.out_of_spec_ratio }}%)
+                  </template>
+                  <template v-else>时长：{{ s.duration_cpk.note }}</template>
+                </div>
+
+                <div v-if="Object.keys(s.param_stats || {}).length" class="text-xs text-gray-500 space-y-0.5 mb-1">
+                  <div v-for="(stat, pname) in s.param_stats" :key="pname">
+                    {{ stat.display_name }}：均值 {{ stat.mean }}{{ stat.unit }} (±{{ stat.std }})
+                    <span v-if="stat.cpk != null">，规格[{{ stat.spec_low }}, {{ stat.spec_high }}]，CPK={{ stat.cpk }}</span>
+                  </div>
+                </div>
+
+                <div v-if="s.energy_avg != null" class="text-xs text-gray-500 mb-1">阶段平均能耗：{{ s.energy_avg }}</div>
+
+                <div v-if="s.ai_insight" class="text-xs text-indigo-700 bg-indigo-50 rounded p-2 mt-1">💡 {{ s.ai_insight }}</div>
+              </div>
+            </template>
+        </div>
+      </div>
+
+      <!-- 阶段分析（独立组件，自行加载数据）-->
+      <StageAnalysis :key="selectedDevice" :device-code="selectedDevice" />
+    </div>
+    <!-- AI Analysis History（所有 tab 可见）-->
+    <div v-if="showAnalysisLog" id="analysis-history-section" class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-headline text-base font-semibold text-gray-900">历史 AI 分析</h2>
+        <span class="text-xs text-gray-400">{{ analysisLogLoading ? '加载中...' : `共 ${analysisLogItems.length} 条` }}</span>
+      </div>
+      <div v-if="!analysisLogLoading && analysisLogItems.length === 0" class="text-xs text-gray-400">
+        暂无历史分析记录，点击"AI 分析"生成第一条。
+      </div>
+      <ul v-else class="divide-y divide-gray-100">
+        <li v-for="item in analysisLogItems" :key="item.id"
+          class="py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-gray-50 rounded-lg px-2"
+          @click="viewAnalysisLogItem(item)"
+        >
+          <div class="min-w-0">
+            <div class="text-sm text-gray-800 truncate">{{ item.start_time }} ~ {{ item.end_time }}</div>
+            <div class="text-xs text-gray-400">{{ item.created_at }}{{ item.running_only ? ' · 仅运行时段' : '' }}</div>
+          </div>
+          <span class="text-xs text-violet-500 shrink-0">查看 →</span>
+        </li>
+      </ul>
+    </div>
+    <!-- AI Analysis Modal -->
+    <Teleport to="body">
+      <div v-if="analysisResult || analysisError" class="fixed inset-0 z-50 flex items-center justify-center p-4" @click.self="analysisResult = ''; analysisResultMeta = ''; analysisError = ''">
+        <div class="absolute inset-0 bg-black/40"></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+          <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+            <h2 class="text-lg font-bold text-gray-900">
+              {{ analysisError ? '分析失败' : 'AI 分析结果' }}
+              <span v-if="analysisResultMeta" class="ml-2 text-xs font-normal text-gray-400">{{ analysisResultMeta }}</span>
+            </h2>
+            <button
+              @click="analysisResult = ''; analysisResultMeta = ''; analysisError = ''"
+              class="text-gray-400 hover:text-gray-600 text-xl leading-none px-2"
+            >✕</button>
+          </div>
+          <div class="overflow-y-auto px-6 py-4 flex-1">
+            <div v-if="analysisError" class="text-red-600 text-sm">{{ analysisError }}</div>
+            <div v-else class="prose prose-sm max-w-none text-gray-700 leading-relaxed" v-html="analysisResultHtml"></div>
+          </div>
+          <div class="flex items-center justify-between px-6 py-3 border-t border-gray-100 shrink-0">
+            <div class="flex items-center gap-2 text-xs text-gray-400">
+              <template v-if="!analysisError">
+                分析时间：{{ startTime }} ~ {{ endTime }}
+                <span v-if="analyzeRunningOnly" class="text-green-500">· 仅运行时段</span>
+              </template>
+            </div>
+            <div class="flex items-center gap-2">
+              <button @click="startAnalysis()" :disabled="analyzing"
+                class="px-4 py-2 text-sm bg-violet-500 text-white rounded-lg hover:bg-violet-600 disabled:opacity-50">
+                {{ analyzing ? '分析中...' : '重新分析' }}
+              </button>
+              <button @click="analysisResult = ''; analysisResultMeta = ''; analysisError = ''"
+                class="px-4 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">关闭</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import * as echarts from 'echarts'
+import client from '../api/client.js'
 import {
   getDeviceParamData,
   getRunningPeriods,
@@ -838,26 +582,12 @@ import {
   detectAnomalies,
   analyzeDeviceParams,
   getAnalysisLog,
-  getStatsOverview,
-  getTrendAlerts,
-  getAlertDiagnosis,
-  runAlertDiagnose,
-  runAllAlertDiagnosis,
-  runRollup,
-  getParamProfile,
-  suggestParamProfile,
-  saveParamProfile,
   getDeviceParamPoints,
-  getCpk,
-  recalcSpecLimits,
-  recalcCpk,
-  diagnoseDevice,
-  getRul,
-  getBenchmark,
-  getPrecursors,
 } from '../api/client.js'
 import StageAnalysis from './StageAnalysis.vue'
+import { marked } from 'marked'
 
+const route = useRoute()
 const devices = ref([])
 const selectedDevice = ref('')
 const loading = ref(false)
@@ -876,6 +606,223 @@ const analyzeRunningOnly = ref(true)
 const showAnalysisLog = ref(false)
 const analysisLogLoading = ref(false)
 const analysisLogItems = ref([])
+const workflowStep = ref(0)
+const pulseParam = ref('')
+const stateResult = ref(null)
+const stateDays = ref(7)
+const kpiResult = ref(null)
+const kpiDays = ref(1)
+// 识别出≥2种型号时，逐型号卡片 + 末尾追加"整体"汇总卡片；只有一种型号时只显示整体卡片
+const kpiCards = computed(() => {
+  const r = kpiResult.value
+  if (!r || r.source) return []
+  if (r.product_types && r.product_types.length >= 2) return [...r.product_types, r.overall]
+  return r.overall ? [r.overall] : []
+})
+// ── 状态切片图（运行/非运行/离线 时间轴）──
+const stateTimelineEl = ref(null)
+let stateTimelineChart = null
+const STATE_META = {
+  running: { name: '运行', color: '#22c55e' },
+  idle: { name: '非运行', color: '#f59e0b' },
+  offline: { name: '离线', color: '#d1d5db' },
+}
+// 阶段颜色（用于合膏机等有Tec_Stage参数的设备），不同阶段用不同色调
+const STAGE_COLORS = [
+  '#22c55e', '#16a34a', '#15803d', '#14532d',  // green shades
+  '#3b82f6', '#2563eb', '#1d4ed8',              // blue shades
+  '#8b5cf6', '#7c3aed', '#6d28d9',              // purple shades
+  '#ec4899', '#db2777', '#be185d',              // pink shades
+  '#f59e0b', '#d97706', '#b45309',              // amber shades
+]
+
+function getStageColor(stage) {
+  if (stage == null) return undefined
+  const s = Math.round(Number(stage))
+  if (isNaN(s)) return undefined
+  return STAGE_COLORS[s % STAGE_COLORS.length]
+}
+
+function getStageName(stage) {
+  if (stage == null) return ''
+  const s = Math.round(Number(stage))
+  if (isNaN(s)) return ''
+  if (s === 0) return '待机'
+  return `阶段${s}`
+}
+
+function disposeStateTimeline() {
+  if (stateTimelineChart && !stateTimelineChart.isDisposed()) stateTimelineChart.dispose()
+  stateTimelineChart = null
+}
+
+function renderStateTimeline() {
+  const tl = stateResult.value?.timeline
+  if (!stateTimelineEl.value) return
+  if (!tl || tl.length === 0) return
+  if (!stateTimelineChart || stateTimelineChart.isDisposed()) {
+    stateTimelineChart = echarts.init(stateTimelineEl.value)
+  }
+
+  const runningSegs = stateResult.value?.running_segments
+
+  // 判断是否有阶段数据（运行段中有 stage 字段）
+  let hasStages = false
+  const stageSet = new Set()
+  if (runningSegs && runningSegs.length > 0) {
+    for (const rs of runningSegs) {
+      if (rs.stage != null) {
+        hasStages = true
+        stageSet.add(Math.round(Number(rs.stage)))
+      }
+    }
+  }
+
+  // 为每个 timeline 段匹配 running_segments 中的 stage（用于运行段着色和 tooltip）
+  const stageBySeg = new Map()
+  if (hasStages) {
+    for (const seg of tl) {
+      if (seg.state !== 'running') continue
+      const segStart = parseTime(seg.start)
+      const segEnd = parseTime(seg.end)
+      if (segStart == null || segEnd == null) continue
+      let bestStage = null
+      let bestOverlap = 0
+      for (const rs of runningSegs) {
+        const rsStart = parseTime(rs.start)
+        const rsEnd = parseTime(rs.end)
+        if (rsStart == null || rsEnd == null) continue
+        const overlap = Math.min(segEnd, rsEnd) - Math.max(segStart, rsStart)
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap
+          bestStage = rs.stage
+        }
+      }
+      const key = `${seg.start}_${seg.end}`
+      stageBySeg.set(key, bestStage)
+    }
+  }
+
+  // 三行：离线(0)、非运行(1)、运行(2)
+  const categories = ['离线', '非运行', '运行']
+  const stateToRow = { offline: 0, idle: 1, running: 2 }
+
+  const data = tl.map((seg, idx) => {
+    const s = parseTime(seg.start)
+    const e = parseTime(seg.end)
+    const row = stateToRow[seg.state] ?? 0
+    const key = `${seg.start}_${seg.end}`
+    const stage = stageBySeg.get(key)
+    const baseColor = STATE_META[seg.state]?.color || '#d1d5db'
+    const color = seg.state === 'running' && stage != null
+      ? (getStageColor(stage) || baseColor)
+      : baseColor
+    return {
+      value: [row, s, e, e - s],
+      itemStyle: { color, borderRadius: seg.state === 'running' ? 2 : 0 },
+      state: seg.state,
+      hours: seg.hours,
+      stage: stage,
+    }
+  })
+
+  stateTimelineChart.setOption({
+    animation: false,
+    grid: { left: 70, right: 20, top: hasStages ? 22 : 8, bottom: 52 },
+    tooltip: {
+      confine: true,
+      trigger: 'item',
+      formatter: (p) => {
+        if (!p.data || !p.data.value) return ''
+        const meta = STATE_META[p.data.state] || {}
+        const fmt = (t) => new Date(t).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+        let stageInfo = ''
+        if (p.data.stage != null) {
+          stageInfo = `<br/>合膏阶段: ${getStageName(p.data.stage)}`
+        }
+        return `<b>${meta.name || p.data.state}</b>${stageInfo}<br/>${fmt(p.value[1])} ~ ${fmt(p.value[2])}<br/>时长 ${p.data.hours} 小时`
+      },
+    },
+    xAxis: {
+      type: 'time',
+      axisLabel: { fontSize: 11, color: '#6b7280', hideOverlap: true },
+      axisLine: { lineStyle: { color: '#d1d5db' } },
+      splitLine: { show: true, lineStyle: { color: '#f3f4f6', type: 'dashed' } },
+    },
+    yAxis: {
+      type: 'category',
+      data: categories,
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: { fontSize: 12, color: '#374151', fontWeight: 500 },
+      inverse: true,
+    },
+    dataZoom: [
+      { type: 'slider', height: 16, bottom: 8, xAxisIndex: 0 },
+      { type: 'inside', xAxisIndex: 0 },
+    ],
+    series: [{
+      type: 'custom',
+      renderItem: (params, api) => {
+        const rowIdx = api.value(0)
+        const startPt = api.coord([api.value(1), rowIdx])
+        const endPt = api.coord([api.value(2), rowIdx])
+        const rowHeight = api.size([0, 1])[1] * 0.65
+        const y = startPt[1] - rowHeight / 2
+        const rect = echarts.graphic.clipRectByRect(
+          { x: startPt[0], y: y, width: Math.max(endPt[0] - startPt[0], 1), height: rowHeight },
+          { x: params.coordSys.x, y: params.coordSys.y, width: params.coordSys.width, height: params.coordSys.height },
+        )
+        if (!rect) return null
+        // 短段时间标注
+        const el = { type: 'rect', shape: rect, style: api.style() }
+        const durHours = api.value(3)
+        const shouldLabel = durHours != null && durHours < 1 && endPt[0] - startPt[0] > 40
+        if (shouldLabel) {
+          return {
+            type: 'group',
+            children: [
+              el,
+              { type: 'text', x: startPt[0] + 4, y: y + rowHeight / 2, style: { text: `${(durHours * 60).toFixed(0)}min`, fill: '#6b7280', fontSize: 9, fontFamily: 'sans-serif', textVerticalAlign: 'middle' } }
+            ],
+          }
+        }
+        return el
+      },
+      encode: { x: [1, 2], y: 0 },
+      data,
+    }],
+    // 阶段图例（左上角小色块）
+    graphic: hasStages ? [
+      { type: 'text', left: 70, top: 2, style: { text: '阶段:', fill: '#9ca3af', fontSize: 10, fontFamily: 'sans-serif' } },
+      ...[...stageSet].sort((a, b) => a - b).map((s, i) => ({
+        type: 'group',
+        left: 100 + i * 52,
+        top: 4,
+        children: [
+          { type: 'rect', shape: { x: 0, y: 0, width: 10, height: 10 }, style: { fill: getStageColor(s) } },
+          { type: 'text', left: 14, top: 8, style: { text: getStageName(s), fill: '#6b7280', fontSize: 10, fontFamily: 'sans-serif' } },
+        ],
+      })),
+    ] : [],
+  }, true)
+  stateTimelineChart.resize()
+}
+
+const stageCpkResult = ref(null)
+const stageCpkDays = ref(7)
+
+// 四个 tab 对应四个分析步骤，内容直接内联展示（不再用弹窗）
+const WORKFLOW_STEPS = [
+  { key: 'state', label: '①状态', desc: '数据驱动划分运行/待机/离线' },
+  { key: 'efficiency', label: '②效率', desc: '资产利用率(老板) vs 设备可用率(班长)' },
+  { key: 'kpi', label: '③KPI', desc: '产量/OEE/单件能耗/合格率' },
+  { key: 'stage', label: '④阶段', desc: '按脉搏切段，CPK/公差/能耗逐段分析' },
+]
+const analysisResultHtml = computed(() => {
+  if (!analysisResult.value) return ''
+  return marked(analysisResult.value)
+})
 
 // ── 仅运行状态过滤（图表/特征视图显示用，独立于 AI 分析的 analyzeRunningOnly）──
 const showRunningOnly = ref(false)
@@ -905,93 +852,10 @@ const iqrThresholds = ref({})
 const anomalyContamination = ref(0.05)
 
 // ── 特征视图状态 ──
-const dataMode = ref('params')  // 'params' | 'features' | 'stage' | 'trend-alerts'
-
-// ── 趋势预警状态 ──
-const trendAlerts = ref([])            // 预警快照列表
-const trendLoading = ref(false)
-const trendRollupRunning = ref(false)
-const trendWindow = ref('')            // 统计窗口区间文字
-const trendNote = ref('')              // 顶部提示
-const trendDays = ref(30)              // 趋势窗口天数(7/30/90)
-let sparklineInstances = {}            // alertKey -> echarts 实例
-const sparklineEls = {}                // alertKey -> DOM
-const sparklineSeries = {}             // alertKey -> [[ts,val],...]
-
-const trendCounts = computed(() => {
-  const c = { critical: 0, warning: 0, info: 0 }
-  for (const a of trendAlerts.value) c[a.severity] = (c[a.severity] || 0) + 1
-  return c
-})
-
-// ── 分阶段漂移报警(7天滑动窗口·6σ) + 知识库诊断 ──
-const stageAlerts = ref([])            // 7天分阶段报警快照(读 device_param_trend_alert)
-const stageAlertsLoading = ref(false)
-const stageAlertNote = ref('')
-const stageDiagRunning = ref(false)    // 批量「全部诊断」进行中
-const expandedDiagKey = ref('')        // 当前展开诊断详情的报警 key
-const alertDiagMap = ref({})           // key -> 诊断对象(null=已查询但无)
-const diagLoadingKey = ref('')         // 正在读/生成诊断的 key
-
-const stageAlertCounts = computed(() => {
-  const c = { critical: 0, warning: 0, info: 0 }
-  for (const a of stageAlerts.value) c[a.severity] = (c[a.severity] || 0) + 1
-  return c
-})
-
-// ── 参数画像状态 ──
-const PTYPES = ['continuous', 'state', 'counter', 'switch', 'setpoint', 'enum', 'unknown']
-const profileRows = ref([])
-const profileLoading = ref(false)
-const profileSuggesting = ref(false)
-const profileUseLlm = ref(true)
-const profileNote = ref('')
-const profileNoteErr = ref(false)
-const profileConfirmedCount = computed(() => profileRows.value.filter(r => r.confirmed).length)
-
-// ── AI 自主诊断 ──
-const diagResult = ref('')
-const diagErr = ref('')
-const diagTrace = ref([])
-const diagRunning = ref(false)
-
-// ── 预测维护(Pillar3) ──
-const predRul = ref([])
-const predBench = ref([])
-const predPrec = ref({})
-const predLoading = ref(false)
-const predComputedAt = ref('')
-function cpkCls(v) {
-  if (v == null) return 'text-gray-300'
-  if (v < 1) return 'text-rose-500'
-  if (v < 1.33) return 'text-amber-500'
-  return 'text-emerald-600'
-}
+const activeStep = ref(1)   // 1=状态 2=效率 3=KPI 4=阶段
 
 // 大跨度聚合：非空表示当前参数视图数据已按该粒度聚合（如 '15min'/'1hour'）
 const aggInterval = ref('')
-
-// ── 按参数组织的特征视图（前端基于实时参数现算）──
-const selectedFeatureParam = ref('')   // 当前选中的基础参数 p_name
-const featureChartEls = {}             // chartKey -> DOM 元素
-let featureChartInstances = {}         // chartKey -> echarts 实例
-
-// 每个参数展示的 4 张特征图
-const FEATURE_CHARTS = [
-  { key: 'raw',  title: '原始值',     subtitle: '采集原值' },
-  { key: 'mean', title: '滑动均值',   subtitle: '5 / 15 / 30 / 60 min' },
-  { key: 'std',  title: '滑动标准差', subtitle: '波动 15 / 30 / 60 min' },
-  { key: 'diff', title: '变化率',     subtitle: '每分钟变化 (5min 重采样)' },
-]
-
-// 可选参数列表（复用原始参数：seriesKeys + 中文名 + 单位）
-const featureParamList = computed(() =>
-  (dataMode.value === 'features' ? seriesKeys.value : []).map(k => ({
-    key: k,
-    label: displayNames.value[k] || k,
-    unit: paramUnits.value[k] || '',
-  }))
-)
 
 let chartInstance = null
 let resizeHandler = null
@@ -1076,8 +940,8 @@ function formatForApi(dtLocal) {
   return dtLocal.replace('T', ' ') + ':00'
 }
 
-// 时间范围：默认最近 24 小时；上限 7 天（jsonb 现算 + 大窗口性能考量）
-const MAX_RANGE_DAYS = 7
+// 时间范围：默认最近 24 小时；默认最大30天，通过dataZoom可拖拽查看历史数据
+const MAX_RANGE_DAYS = 30
 const _initEnd = new Date()
 const _initStart = new Date(_initEnd.getTime() - 24 * 3600 * 1000)
 const startTime = ref(toDatetimeLocal(_initStart))
@@ -1089,6 +953,7 @@ const QUICK_RANGES = [
   { key: '24h', label: '最近24小时', hours: 24 },
   { key: '3d',  label: '最近3天', hours: 72 },
   { key: '7d',  label: '最近7天', hours: 168 },
+  { key: '30d', label: '最近30天', hours: 720 },
 ]
 
 // 点快捷范围：以「当前时间」为终点回推，并立即查询
@@ -1105,11 +970,11 @@ function applyQuickRange(r) {
 // 手动改动输入框 → 标记为自定义
 function onRangeInputChange() {
   activeQuickRange.value = 'custom'
-  clampRangeWithin7Days()
+  clampRangeWithin()
 }
 
-// 保证范围 ≤ 7 天，超出则收窄起点并提示
-function clampRangeWithin7Days() {
+// 保证范围 ≤ MAX_RANGE_DAYS，超出则收窄起点并提示
+function clampRangeWithin() {
   const s = new Date(startTime.value).getTime()
   const e = new Date(endTime.value).getTime()
   if (!isFinite(s) || !isFinite(e)) { rangeWarning.value = ''; return false }
@@ -1138,6 +1003,9 @@ const ALL_POINT_NAMES = ref([])
 const LOADED_POINT_NAMES = ref(new Set())
 const DEFAULT_VISIBLE_COUNT = 5
 
+let _stateAbort = null        // AbortController 用于取消重复状态分析请求
+let _stateRequestId = 0       // 递增计数器，只有最新请求的响应才更新 stateResult
+
 function onDeviceChange() {
   seriesKeys.value = []
   visibleKeys.value = []
@@ -1152,33 +1020,20 @@ function onDeviceChange() {
   analysisLogItems.value = []
   ALL_POINT_NAMES.value = []
   LOADED_POINT_NAMES.value = new Set()
+  workflowStep.value = 0
   showAlarmOverlay.value = false
   alarmEvents.value = []
   alignedRows.value = []
   paramsMeta.value = {}
   alarmTypeFilter.value = []
-  selectedFeatureParam.value = ''
   disposeChart()
-  disposeFeatureCharts()
-  disposeSparklines()
-  trendAlerts.value = []
-  trendWindow.value = ''
-  trendNote.value = ''
-  profileRows.value = []
-  profileNote.value = ''
-  diagResult.value = ''
-  diagErr.value = ''
-  diagTrace.value = []
-  predRul.value = []
-  predBench.value = []
-  predPrec.value = {}
-  predComputedAt.value = ''
-  if (selectedDevice.value) {
-    if (dataMode.value === 'trend-alerts') { loadTrendAlerts(); loadStageAlerts() }
-    else if (dataMode.value === 'profile') loadProfile()
-    else if (dataMode.value === 'predictive') loadPredictive()
-    else loadData()
-  }
+  disposeStateTimeline()
+  stateResult.value = null
+  kpiResult.value = null
+  stageCpkResult.value = null
+  if (_stateAbort) { _stateAbort.abort(); _stateAbort = null }
+  _stateRequestId++
+  if (selectedDevice.value) loadData()
 }
 
 function currentDeviceName() {
@@ -1204,505 +1059,24 @@ async function loadRunningPeriods() {
 
 // ── 特征视图 ──
 
-async function switchDataMode(mode) {
-  dataMode.value = mode
-  if (mode === 'stage') {
-    // 阶段分析为独立组件，自行加载；释放主图表与特征图，避免占用
-    disposeChart()
-    disposeFeatureCharts()
-    return
-  }
-  if (mode === 'trend-alerts') {
-    // 趋势预警：读预计算快照，与原始图表无关
-    disposeChart()
-    disposeFeatureCharts()
-    if (selectedDevice.value) { await loadTrendAlerts(); loadStageAlerts() }
-    return
-  }
-  if (mode === 'profile') {
-    // 参数画像：读/识别参数语义，与原始图表无关
-    disposeChart()
-    disposeFeatureCharts()
-    if (selectedDevice.value) await loadProfile()
-    return
-  }
-  if (mode === 'predictive') {
-    // 预测维护：RUL/对标/前兆，只读端点
-    disposeChart()
-    disposeFeatureCharts()
-    if (selectedDevice.value) await loadPredictive()
-    return
-  }
-  if (mode === 'features') {
-    // 特征视图：基于已加载的实时参数(device_alarm_info)在前端现算
-    disposeChart()  // 释放原始参数大图
-    if (seriesKeys.value.length === 0 && selectedDevice.value) {
-      loading.value = true
-      await loadData()   // loadData 末尾会按 dataMode 渲染特征图
-      return
-    }
-    if (!selectedFeatureParam.value || !seriesKeys.value.includes(selectedFeatureParam.value)) {
-      selectedFeatureParam.value = featureParamList.value[0]?.key || ''
-    }
-    await nextTick()
-    renderFeatureCharts()
-  } else {
-    disposeFeatureCharts()
-    loading.value = true
-    await loadData()
-  }
-}
-
-function selectFeatureParam(key) {
-  selectedFeatureParam.value = key
-  nextTick(() => renderFeatureCharts())
-}
-
-function setFeatureChartRef(key, el) {
-  if (el) featureChartEls[key] = el
-  else delete featureChartEls[key]
-}
-
-function disposeFeatureCharts() {
-  for (const k in featureChartInstances) {
-    const inst = featureChartInstances[k]
-    if (inst && !inst.isDisposed()) inst.dispose()
-  }
-  featureChartInstances = {}
-}
-
-// ── 趋势预警 ──
-
-const SEV_META = {
-  critical: { label: '显著漂移', cls: 'bg-red-50 text-red-600' },
-  warning: { label: '需关注', cls: 'bg-amber-50 text-amber-600' },
-  info: { label: '平稳', cls: 'bg-gray-100 text-gray-500' },
-}
-function sevMeta(sev) { return SEV_META[sev] || SEV_META.info }
-function dirArrow(dir) { return dir === 'up' ? '↑' : dir === 'down' ? '↓' : '—' }
-function mkLabel(t) { return t === 'up' ? '显著上升' : t === 'down' ? '显著下降' : '无显著趋势' }
-function fmtNum(v, digits = 2) {
-  if (v == null || isNaN(v)) return '—'
-  return Number(v).toFixed(digits).replace(/\.?0+$/, '') || '0'
-}
-function alertKey(a) { return `${a.metric}|${a.stage == null ? '-' : a.stage}` }
-
-function setTrendDays(d) {
-  if (trendDays.value === d) return
-  trendDays.value = d
-  if (selectedDevice.value) loadTrendAlerts()
-}
-
-// 读「全参数趋势总览」：统计 + 内联趋势 + 内嵌序列（一次请求，省去逐参数拉取）
-async function loadTrendAlerts() {
+// tab 切换：① 状态(含原始参数曲线) ② 效率 ③ KPI ④ 阶段
+async function onStepClick(step) {
+  activeStep.value = step
   if (!selectedDevice.value) return
-  trendLoading.value = true
-  trendNote.value = ''
-  disposeSparklines()
-  for (const k in sparklineSeries) delete sparklineSeries[k]
-  try {
-    const res = await getStatsOverview({ device_code: selectedDevice.value, days: trendDays.value })
-    if (res.code === 200 && res.data) {
-      trendAlerts.value = res.data.metrics || []
-      trendWindow.value = (res.data.start && res.data.end) ? `${res.data.start} ~ ${res.data.end}` : ''
-      if (trendAlerts.value.length === 0) {
-        trendNote.value = '该设备暂无统计数据。请点「立即计算(90天)」回填后再看。'
-      } else {
-        for (const a of trendAlerts.value) {
-          sparklineSeries[alertKey(a)] = (a.series || [])
-            .filter(p => p.median != null)
-            .map(p => [p.date, p.median])
-        }
-        await nextTick()
-        renderSparklines()
-      }
+  if (step === 1 || step === 2) {
+    if (!stateResult.value) await startStateAnalysis()
+    if (step === 1) {
+      disposeStateTimeline()
+      await nextTick()
+      if (seriesKeys.value.length > 0) initChart()
+      await nextTick()
+      renderStateTimeline()
     }
-  } catch (err) {
-    console.error('加载趋势总览失败:', err)
-    trendNote.value = '加载趋势总览失败。'
-  } finally {
-    trendLoading.value = false
-  }
-}
-
-// ── 分阶段漂移报警(7天) + 知识库诊断 ──
-function alertSnapKey(a) {
-  return `${a.metric}|${a.stage == null ? '-' : a.stage}|${a.eval_date}|${a.baseline_days}`
-}
-
-async function loadStageAlerts() {
-  if (!selectedDevice.value) return
-  stageAlertsLoading.value = true
-  stageAlertNote.value = ''
-  expandedDiagKey.value = ''
-  try {
-    const res = await getTrendAlerts({ device_code: selectedDevice.value, baseline_days: 7 })
-    if (res.code === 200 && res.data) {
-      stageAlerts.value = (res.data.alerts || []).filter(a => a.stage !== null && a.stage !== undefined)
-      if (stageAlerts.value.length === 0) {
-        stageAlertNote.value = '暂无 7 天分阶段报警快照。请先用「立即计算(90天)」回填该设备统计。'
-      }
-    } else {
-      stageAlerts.value = []
-    }
-  } catch (err) {
-    console.error('加载分阶段报警失败:', err)
-    stageAlertNote.value = '加载分阶段报警失败。'
-  } finally {
-    stageAlertsLoading.value = false
-  }
-}
-
-async function toggleDiag(a) {
-  const key = alertSnapKey(a)
-  if (expandedDiagKey.value === key) { expandedDiagKey.value = ''; return }
-  expandedDiagKey.value = key
-  if (alertDiagMap.value[key] === undefined) await loadDiag(a)
-}
-
-async function loadDiag(a) {
-  const key = alertSnapKey(a)
-  diagLoadingKey.value = key
-  try {
-    const res = await getAlertDiagnosis({
-      device_code: selectedDevice.value, metric: a.metric, stage: a.stage,
-      eval_date: a.eval_date, baseline_days: a.baseline_days,
-    })
-    alertDiagMap.value[key] = (res.code === 200) ? (res.data || null) : null
-  } catch (err) {
-    console.error('读取诊断失败:', err)
-    alertDiagMap.value[key] = null
-  } finally {
-    diagLoadingKey.value = ''
-  }
-}
-
-async function generateDiag(a) {
-  const key = alertSnapKey(a)
-  diagLoadingKey.value = key
-  try {
-    const res = await runAlertDiagnose({
-      device_code: selectedDevice.value, metric: a.metric, stage: a.stage,
-      eval_date: a.eval_date, baseline_days: a.baseline_days,
-    })
-    alertDiagMap.value[key] = (res.code === 200)
-      ? (res.data || null)
-      : { problem: res.msg || '诊断失败', ok: false }
-  } catch (err) {
-    console.error('生成诊断失败:', err)
-    alertDiagMap.value[key] = { problem: '诊断请求失败，请重试。', ok: false }
-  } finally {
-    diagLoadingKey.value = ''
-  }
-}
-
-async function runAllStageDiag() {
-  if (!selectedDevice.value || stageDiagRunning.value) return
-  stageDiagRunning.value = true
-  stageAlertNote.value = '正在对全部需关注/显著漂移报警结合知识库生成诊断，较慢，请稍候…'
-  try {
-    const res = await runAllAlertDiagnosis({ device_code: selectedDevice.value, baseline_days: 7 })
-    if (res.code === 200) {
-      stageAlertNote.value = `知识库诊断完成：${res.data?.diagnosed ?? 0} 条。展开报警可查看。`
-      alertDiagMap.value = {}   // 清缓存，展开时重新拉最新
-      const cur = stageAlerts.value.find(x => alertSnapKey(x) === expandedDiagKey.value)
-      if (cur) await loadDiag(cur)
-    } else {
-      stageAlertNote.value = res.msg || '诊断任务失败。'
-    }
-  } catch (err) {
-    console.error('批量诊断失败:', err)
-    stageAlertNote.value = '诊断任务失败，请重试。'
-  } finally {
-    stageDiagRunning.value = false
-  }
-}
-
-function setSparklineRef(key, el) {
-  if (el) sparklineEls[key] = el
-  else delete sparklineEls[key]
-}
-
-function renderSparklines() {
-  for (const a of trendAlerts.value) {
-    const key = alertKey(a)
-    const el = sparklineEls[key]
-    const data = sparklineSeries[key]
-    if (!el || !data || data.length === 0) continue
-    let chart = sparklineInstances[key]
-    if (!chart || chart.isDisposed()) {
-      chart = echarts.init(el)
-      sparklineInstances[key] = chart
-    }
-    const color = a.severity === 'critical' ? '#ef4444'
-      : a.severity === 'warning' ? '#f59e0b' : '#9ca3af'
-    const mean = data.reduce((s, d) => s + d[1], 0) / data.length
-    chart.setOption({
-      animation: false,
-      grid: { left: 1, right: 1, top: 3, bottom: 3 },
-      xAxis: { type: 'category', show: false, boundaryGap: false },
-      yAxis: { type: 'value', show: false, scale: true },
-      tooltip: {
-        trigger: 'axis', confine: true,
-        formatter: (ps) => `${ps[0].axisValue}<br/>中位 ${fmtNum(ps[0].data[1], 3)}`,
-      },
-      // 窗口均值参考线，便于看"逐渐偏离"
-      series: [{
-        type: 'line', data, showSymbol: false, smooth: true,
-        lineStyle: { width: 1.5, color },
-        areaStyle: { color, opacity: 0.08 },
-        markLine: {
-          silent: true, symbol: 'none',
-          lineStyle: { type: 'dashed', width: 1, color: '#d1d5db' },
-          data: [{ yAxis: mean }],
-        },
-      }],
-    }, true)
-    chart.resize()
-  }
-}
-
-function disposeSparklines() {
-  for (const k in sparklineInstances) {
-    const c = sparklineInstances[k]
-    if (c && !c.isDisposed()) c.dispose()
-  }
-  sparklineInstances = {}
-}
-
-async function triggerRollup() {
-  if (!selectedDevice.value || trendRollupRunning.value) return
-  trendRollupRunning.value = true
-  trendNote.value = '已在后台开始回填最近 90 天（最近的天最先生成），页面会自动刷新，约 1-2 分钟…'
-  try {
-    // 后台执行，立即返回免超时；最近的天先算好，随后自动刷新陆续显示
-    const res = await runRollup({ device_code: selectedDevice.value, days: 90, background: true })
-    if (res.code === 200) {
-      _scheduleTrendAutoRefresh()
-    } else {
-      trendNote.value = res.msg || '触发失败。'
-    }
-  } catch (err) {
-    console.error('回填触发失败:', err)
-    trendNote.value = '触发失败，请重试或改用后端手动任务。'
-  } finally {
-    trendRollupRunning.value = false
-  }
-}
-
-// 回填后多次延时自动刷新：最近的天先算好，逐步显示出来
-function _scheduleTrendAutoRefresh() {
-  for (const d of [8000, 20000, 45000, 90000]) {
-    setTimeout(() => {
-      if (dataMode.value === 'trend-alerts' && selectedDevice.value) { loadTrendAlerts(); loadStageAlerts() }
-    }, d)
-  }
-}
-
-// ── 参数画像 ──
-
-function _toProfileRow(p) {
-  const bands = p.bands || {}
-  return {
-    ...p, bands, monitor: !!p.monitor,
-    _spec_low: bands.spec_low ?? null,
-    _spec_high: bands.spec_high ?? null,
-    _cpk: null, _saving: false, _recalc: false, _recalc_result: null,
-    _recalcCpk: false, _recalcCpkResult: null,
-  }
-}
-
-async function loadProfile() {
-  if (!selectedDevice.value) return
-  profileLoading.value = true
-  profileNote.value = ''
-  profileNoteErr.value = false
-  try {
-    const res = await getParamProfile(selectedDevice.value)
-    if (res.code === 200 && res.data) {
-      profileRows.value = (res.data.profiles || []).map(_toProfileRow)
-      if (profileRows.value.length === 0) {
-        profileNote.value = '尚无画像，点「AI 识别」生成。'
-      } else {
-        await loadCpkInto()
-      }
-    }
-  } catch (err) {
-    console.error('加载参数画像失败:', err)
-    profileNote.value = '加载参数画像失败。'
-    profileNoteErr.value = true
-  } finally {
-    profileLoading.value = false
-  }
-}
-
-async function loadCpkInto() {
-  try {
-    const res = await getCpk({ device_code: selectedDevice.value, days: 30 })
-    if (res.code === 200 && res.data?.cpk) {
-      const m = {}
-      for (const c of res.data.cpk) m[c.p_name] = c.cpk
-      for (const r of profileRows.value) r._cpk = m[r.p_name] ?? null
-    }
-  } catch (e) { /* Cpk 缺失不阻断 */ }
-}
-
-async function runSuggest() {
-  if (!selectedDevice.value || profileSuggesting.value) return
-  profileSuggesting.value = true
-  profileNoteErr.value = false
-  profileNote.value = profileUseLlm.value
-    ? '正在识别全部参数(调用 AI 提语义，可能稍慢)…' : '正在按统计签名识别全部参数…'
-  try {
-    const res = await suggestParamProfile({
-      device_code: selectedDevice.value, use_llm: profileUseLlm.value,
-    })
-    if (res.code === 200) {
-      profileNote.value = `识别完成，共 ${res.data.count} 个参数(均为待确认建议，请逐行核对后确认)。`
-      await loadProfile()
-    } else {
-      profileNote.value = res.msg || '识别失败'
-      profileNoteErr.value = true
-    }
-  } catch (err) {
-    console.error('参数识别失败:', err)
-    profileNote.value = '参数识别失败。'
-    profileNoteErr.value = true
-  } finally {
-    profileSuggesting.value = false
-  }
-}
-
-async function loadPredictive(refresh = false) {
-  if (!selectedDevice.value) return
-  predLoading.value = true
-  try {
-    const dc = selectedDevice.value
-    const q = { device_code: dc, refresh }
-    const [rul, bench, prec] = await Promise.all([
-      getRul(q).catch(() => null),
-      getBenchmark(q).catch(() => null),
-      getPrecursors(q).catch(() => null),
-    ])
-    predRul.value = (rul && rul.code === 200 && rul.data?.items) || []
-    predBench.value = (bench && bench.code === 200 && bench.data?.items) || []
-    predPrec.value = (prec && prec.code === 200 && prec.data) || {}
-    // 取任一返回的 computed_at 作"上次计算时间"（命中缓存才有）
-    predComputedAt.value = [rul, bench, prec]
-      .map(r => r && r.code === 200 && r.data?.cached ? r.data.computed_at : null)
-      .find(Boolean) || ''
-  } catch (err) {
-    console.error('加载预测维护失败:', err)
-  } finally {
-    predLoading.value = false
-  }
-}
-
-async function runDiagnose() {
-  if (!selectedDevice.value || diagRunning.value) return
-  diagRunning.value = true
-  diagErr.value = ''
-  diagResult.value = ''
-  diagTrace.value = []
-  try {
-    const res = await diagnoseDevice({ device_code: selectedDevice.value })
-    if (res.code === 200 && res.data) {
-      diagResult.value = res.data.diagnosis || ''
-      diagTrace.value = res.data.trace || []
-      if (res.data.error) diagErr.value = res.data.error
-    } else {
-      diagErr.value = res.msg || 'AI 诊断失败'
-    }
-  } catch (err) {
-    console.error('AI 诊断失败:', err)
-    diagErr.value = 'AI 诊断失败（多轮 LLM 较慢，可能超时）。'
-  } finally {
-    diagRunning.value = false
-  }
-}
-
-async function confirmRow(row) {
-  if (row._saving) return
-  row._saving = true
-  // 组装回 profile：编辑的 spec 写回 bands（标记为工程规格）
-  const profile = { ...row }
-  for (const k of ['_spec_low', '_spec_high', '_cpk', '_saving', 'confirmed', 'updated_by']) {
-    delete profile[k]
-  }
-  profile.bands = { ...(row.bands || {}) }
-  if (row._spec_low != null) profile.bands.spec_low = row._spec_low
-  if (row._spec_high != null) profile.bands.spec_high = row._spec_high
-  if (row._spec_low != null || row._spec_high != null) profile.bands.spec_source = 'engineering'
-  try {
-    const res = await saveParamProfile({
-      device_code: selectedDevice.value, p_name: row.p_name, profile,
-    })
-    if (res.code === 200) {
-      row.confirmed = true
-      await loadCpkInto()
-    } else {
-      profileNote.value = res.msg || '保存失败'
-      profileNoteErr.value = true
-    }
-  } catch (err) {
-    console.error('确认画像失败:', err)
-    profileNote.value = '保存失败。'
-    profileNoteErr.value = true
-  } finally {
-    row._saving = false
-  }
-}
-
-async function recalcSpec(row) {
-  row._recalc = true
-  try {
-    const res = await recalcSpecLimits({
-      device_code: selectedDevice.value, p_name: row.p_name,
-    })
-    if (res.code === 200 && res.data) {
-      row._spec_low = res.data.spec_low
-      row._spec_high = res.data.spec_high
-      row._recalc_result = res.data
-    } else {
-      profileNote.value = res.msg || '重算失败'
-      profileNoteErr.value = true
-    }
-  } catch (err) {
-    console.error('重算规格限失败:', err)
-    profileNote.value = '重算失败。'
-    profileNoteErr.value = true
-  } finally {
-    row._recalc = false
-  }
-}
-
-async function recalcCpkRow(row) {
-  const spec_low = row._spec_low
-  const spec_high = row._spec_high
-  if (spec_low == null || spec_high == null) {
-    profileNote.value = '请先设置上下限或点"自动设置上下限"'
-    profileNoteErr.value = true
-    return
-  }
-  row._recalcCpk = true
-  try {
-    const res = await recalcCpk({
-      device_code: selectedDevice.value, p_name: row.p_name,
-      spec_low, spec_high,
-    })
-    if (res.code === 200 && res.data) {
-      row._cpk = res.data.cpk
-      row._recalcCpkResult = res.data
-    } else {
-      profileNote.value = res.msg || '重算CPK失败'
-      profileNoteErr.value = true
-    }
-  } catch (err) {
-    console.error('重算CPK失败:', err)
-    profileNote.value = '重算CPK失败。'
-    profileNoteErr.value = true
-  } finally {
-    row._recalcCpk = false
+  } else if (step === 3) {
+    if (!kpiResult.value) startKpiAnalysis()
+  } else if (step === 4) {
+    disposeChart()
+    if (!stageCpkResult.value) startStageCpkAnalysis()
   }
 }
 
@@ -1730,98 +1104,7 @@ function getSeries(key) {
 }
 
 function onRunningOnlyToggle() {
-  if (dataMode.value === 'features') renderFeatureCharts()
-  else updateChart()
-}
-
-// 把某参数的原始序列现算成特征：5min 重采样 + 滑动统计 + 变化率
-// 与后端 extract_device_features 语义一致（RESAMPLE_FREQ=5min, 窗口按时间, std ddof=1）
-function computeFeatureSeries(rawPoints) {
-  const pts = []
-  for (const p of rawPoints) {
-    const t = parseTime(p.time)
-    const v = typeof p.value === 'number' ? p.value : parseFloat(p.value)
-    if (t != null && !isNaN(v)) pts.push([t, v])
-  }
-  pts.sort((a, b) => a[0] - b[0])
-
-  // 重采样到 5min 网格（均值）
-  const BUCKET = 5 * 60 * 1000
-  const buckets = new Map()
-  for (const [t, v] of pts) {
-    const b = Math.floor(t / BUCKET) * BUCKET
-    const e = buckets.get(b) || [0, 0]
-    e[0] += v; e[1] += 1
-    buckets.set(b, e)
-  }
-  const gt = [...buckets.keys()].sort((a, b) => a - b)
-  const gv = gt.map(b => buckets.get(b)[0] / buckets.get(b)[1])
-
-  const winPts = { '5min': 1, '15min': 3, '30min': 6, '60min': 12 }
-
-  const rollMean = (n) => gt.map((t, i) => {
-    const s = Math.max(0, i - n + 1)
-    let sum = 0, c = 0
-    for (let j = s; j <= i; j++) { sum += gv[j]; c++ }
-    return [t, c ? +(sum / c).toFixed(4) : null]
-  })
-  const rollStd = (n) => gt.map((t, i) => {
-    const s = Math.max(0, i - n + 1)
-    const arr = gv.slice(s, i + 1)
-    if (arr.length < 2) return [t, null]
-    const m = arr.reduce((a, b) => a + b, 0) / arr.length
-    const varr = arr.reduce((a, b) => a + (b - m) * (b - m), 0) / (arr.length - 1)
-    return [t, +Math.sqrt(varr).toFixed(4)]
-  })
-  // 5min 网格上的变化率：相邻差 / 5 分钟
-  const diff = gt.map((t, i) => i === 0 ? [t, null] : [t, +((gv[i] - gv[i - 1]) / 5).toFixed(4)])
-
-  return { rawPts: pts, winPts, rollMean, rollStd, diff }
-}
-
-function renderFeatureCharts() {
-  if (dataMode.value !== 'features' || !selectedFeatureParam.value) return
-  const key = selectedFeatureParam.value
-  const raw = getSeries(key)
-  const f = computeFeatureSeries(raw)
-  const label = displayNames.value[key] || key
-  const unit = paramUnits.value[key] || ''
-  const unitSuffix = unit ? ` (${unit})` : ''
-
-  const baseOpt = (series, legend = false) => ({
-    animation: false,
-    grid: { left: 52, right: 16, top: legend ? 30 : 12, bottom: 26 },
-    tooltip: { trigger: 'axis', confine: true },
-    legend: legend ? { top: 2, type: 'scroll', textStyle: { fontSize: 10 } } : undefined,
-    xAxis: { type: 'time', axisLabel: { fontSize: 10, hideOverlap: true } },
-    yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
-    series,
-  })
-  const line = (name, data, color) => ({
-    name, type: 'line', showSymbol: false, sampling: 'lttb',
-    lineStyle: { width: 1 }, itemStyle: { color }, data,
-  })
-
-  const optByKey = {
-    raw: baseOpt([line(label + unitSuffix, f.rawPts, '#6366f1')]),
-    mean: baseOpt(['5min', '15min', '30min', '60min'].map(
-      (w, i) => line(w, f.rollMean(f.winPts[w]), SERIES_COLORS[i % SERIES_COLORS.length])), true),
-    std: baseOpt(['15min', '30min', '60min'].map(
-      (w, i) => line(w, f.rollStd(f.winPts[w]), SERIES_COLORS[(i + 1) % SERIES_COLORS.length])), true),
-    diff: baseOpt([line('变化率/min', f.diff, '#ef4444')]),
-  }
-
-  for (const fc of FEATURE_CHARTS) {
-    const el = featureChartEls[fc.key]
-    if (!el) continue
-    let inst = featureChartInstances[fc.key]
-    if (!inst || inst.isDisposed()) {
-      inst = echarts.init(el)
-      featureChartInstances[fc.key] = inst
-    }
-    inst.setOption(optByKey[fc.key], true)
-    inst.resize()
-  }
+  updateChart()
 }
 
 // ── 异常检测 ──
@@ -1919,20 +1202,25 @@ function toggleAlarmType(code) {
 async function loadData() {
   if (!selectedDevice.value) return
 
-  clampRangeWithin7Days()
+  clampRangeWithin()
   loading.value = true
   analysisResult.value = ''
   analysisError.value = ''
   disposeChart()
 
+  // 「参数设定」页筛选保存的 checked_params 是本页参数范围的唯一依据；
+  // 没筛选过(该设备从未在「参数设定」保存过)才回退到该设备全部参数
+  const checkedParams = await loadScreenStateFromDb()
+
   try {
     const spanHours = (new Date(endTime.value) - new Date(startTime.value)) / 3600000
-    const useInterval = (dataMode.value === 'params' && spanHours > 3) ? 'auto' : 'raw'
+    const useInterval = spanHours > 3 ? 'auto' : 'raw'
 
-    if (dataMode.value === 'params') {
+    {
       const pointsRes = await getDeviceParamPoints(selectedDevice.value)
+      let allPointNames = []
       if (pointsRes.code === 200 && pointsRes.data) {
-        ALL_POINT_NAMES.value = pointsRes.data.map(p => p.p_name)
+        allPointNames = pointsRes.data.map(p => p.p_name)
         // 从点位列表预填显示名和单位，避免未加载参数显示英文代码
         for (const p of pointsRes.data) {
           if (!displayNames.value[p.p_name]) {
@@ -1942,6 +1230,18 @@ async function loadData() {
             paramUnits.value[p.p_name] = p.unit
           }
         }
+      }
+      ALL_POINT_NAMES.value = checkedParams || allPointNames
+
+      // 自动检测脉搏参数：合膏机优先用 Tec_Stage，其他设备默认优先 pulse/count 类参数
+      if (!pulseParam.value && allPointNames.length > 0) {
+        const candidate = allPointNames.find(n =>
+          n === 'Tec_Stage' || n.includes('Stage') || n.includes('_Stage')
+        ) || allPointNames.find(n =>
+          n.toLowerCase().includes('pulse') || n.toLowerCase().includes('cycle') ||
+          n.toLowerCase().includes('count') || n.includes('_End')
+        )
+        if (candidate) pulseParam.value = candidate
       }
 
       const defaultPoints = ALL_POINT_NAMES.value.slice(0, DEFAULT_VISIBLE_COUNT)
@@ -1957,7 +1257,7 @@ async function loadData() {
 
       if (res.code === 200 && res.data?.series) {
         const series = res.data.series
-        // 如果默认点位没有数据，尝试加载所有点位
+        // 如果默认点位没有数据，尝试加载筛选范围内的其余点位(仍限定在筛选结果内，不回退到全设备参数)
         if (Object.keys(series).length === 0 && ALL_POINT_NAMES.value.length > 0) {
           const allRes = await getDeviceParamData({
             device_code: selectedDevice.value,
@@ -1965,10 +1265,18 @@ async function loadData() {
             end_time: formatForApi(endTime.value),
             limit: 300000,
             interval: useInterval,
+            p_names: ALL_POINT_NAMES.value,
           })
-          if (allRes.code === 200 && allRes.data?.series) {
+          if (allRes.code === 200 && allRes.data?.series && Object.keys(allRes.data.series).length > 0) {
             seriesData.value = allRes.data.series
             visibleKeys.value = Object.keys(allRes.data.series).slice(0, DEFAULT_VISIBLE_COUNT)
+            // 确保 Tec_Stage 等阶段参数始终可见
+            for (const stageParam of allPointNames) {
+              if ((stageParam.includes('_Stage') || stageParam.includes('Stage')) &&
+                  allRes.data.series[stageParam] && !visibleKeys.value.includes(stageParam)) {
+                visibleKeys.value.push(stageParam)
+              }
+            }
             Object.assign(displayNames.value, allRes.data.display_names || {})
             Object.assign(paramUnits.value, allRes.data.units || {})
             aggInterval.value = allRes.data.aggregated ? (allRes.data.interval || '') : ''
@@ -1976,15 +1284,26 @@ async function loadData() {
               LOADED_POINT_NAMES.value.add(key)
             }
           } else {
-            seriesData.value = {}
-            visibleKeys.value = []
-            displayNames.value = {}
-            paramUnits.value = {}
-            aggInterval.value = ''
+            // 当前时间范围无数据，尝试扩展范围回退查找
+            const fallbackLoaded = await tryWiderRangeFallback(allPointNames)
+            if (!fallbackLoaded) {
+              seriesData.value = {}
+              visibleKeys.value = []
+              displayNames.value = {}
+              paramUnits.value = {}
+              aggInterval.value = ''
+            }
           }
         } else {
           seriesData.value = series
           visibleKeys.value = defaultPoints.filter(k => series[k])
+          // 确保 Tec_Stage 等阶段参数始终可见
+          for (const stageParam of allPointNames) {
+            if ((stageParam.includes('_Stage') || stageParam.includes('Stage')) &&
+                series[stageParam] && !visibleKeys.value.includes(stageParam)) {
+              visibleKeys.value.push(stageParam)
+            }
+          }
           Object.assign(displayNames.value, res.data.display_names || {})
           Object.assign(paramUnits.value, res.data.units || {})
           aggInterval.value = res.data.aggregated ? (res.data.interval || '') : ''
@@ -1993,33 +1312,6 @@ async function loadData() {
           }
         }
         seriesKeys.value = ALL_POINT_NAMES.value
-        await loadRunningPeriods()
-      } else {
-        seriesKeys.value = []
-        visibleKeys.value = []
-        displayNames.value = {}
-        paramUnits.value = {}
-        seriesData.value = {}
-        runningPeriods.value = []
-        aggInterval.value = ''
-      }
-    } else {
-      const res = await getDeviceParamData({
-        device_code: selectedDevice.value,
-        start_time: formatForApi(startTime.value),
-        end_time: formatForApi(endTime.value),
-        limit: 300000,
-        interval: useInterval,
-      })
-
-      if (res.code === 200 && res.data?.series) {
-        seriesData.value = res.data.series
-        seriesKeys.value = Object.keys(res.data.series)
-        visibleKeys.value = [...seriesKeys.value]
-        Object.assign(displayNames.value, res.data.display_names || {})
-        Object.assign(paramUnits.value, res.data.units || {})
-        aggInterval.value = res.data.aggregated ? (res.data.interval || '') : ''
-
         await loadRunningPeriods()
       } else {
         seriesKeys.value = []
@@ -2041,14 +1333,15 @@ async function loadData() {
   } finally {
     loading.value = false
     await nextTick()
-    if (dataMode.value === 'features') {
-      if (!selectedFeatureParam.value || !seriesKeys.value.includes(selectedFeatureParam.value)) {
-        selectedFeatureParam.value = featureParamList.value[0]?.key || ''
+    if (activeStep.value === 1 && seriesKeys.value.length > 0) initChart()
+    // 状态切片图：已有数据则直接渲染，否则自动加载
+    if (pulseParam.value && activeStep.value === 1) {
+      if (stateResult.value && stateResult.value.timeline?.length) {
+        await nextTick()
+        renderStateTimeline()
+      } else if (!stateResult.value || stateResult.value.source === 'error') {
+        startStateAnalysis()
       }
-      await nextTick()
-      renderFeatureCharts()
-    } else if (seriesKeys.value.length > 0) {
-      initChart()
     }
   }
 }
@@ -2059,34 +1352,8 @@ async function toggleSeries(key) {
     visibleKeys.value.splice(idx, 1)
     updateChart()
   } else {
-    if (!LOADED_POINT_NAMES.value.has(key)) {
-      try {
-        const spanHours = (new Date(endTime.value) - new Date(startTime.value)) / 3600000
-        const useInterval = spanHours > 3 ? 'auto' : 'raw'
-
-        const res = await getDeviceParamData({
-          device_code: selectedDevice.value,
-          start_time: formatForApi(startTime.value),
-          end_time: formatForApi(endTime.value),
-          limit: 300000,
-          interval: useInterval,
-          p_names: [key],
-        })
-
-        LOADED_POINT_NAMES.value.add(key)
-        if (res.code === 200 && res.data?.series) {
-          Object.assign(seriesData.value, res.data.series)
-          if (res.data.display_names) {
-            Object.assign(displayNames.value, res.data.display_names)
-          }
-          if (res.data.units) {
-            Object.assign(paramUnits.value, res.data.units)
-          }
-        }
-      } catch (err) {
-        console.error('加载参数数据失败:', err)
-        return
-      }
+    if (!seriesData.value[key] || seriesData.value[key].length === 0) {
+      await loadParamWithFallback(key)
     }
     if (seriesData.value[key] && seriesData.value[key].length > 0) {
       visibleKeys.value.push(key)
@@ -2108,41 +1375,216 @@ async function toggleSeries(key) {
   }
 }
 
+async function loadParamWithFallback(key) {
+  // 逐级回退时间窗口：当前范围 → 7天 → 30天 → 90天
+  const now = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const fmtTs = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+
+  const tryWindows = [
+    { label: '当前范围', start: new Date(startTime.value), end: new Date(endTime.value) },
+    { label: '最近7天', start: new Date(now.getTime() - 7 * 86400000), end: now },
+    { label: '最近30天', start: new Date(now.getTime() - 30 * 86400000), end: now },
+    { label: '最近90天', start: new Date(now.getTime() - 90 * 86400000), end: now },
+  ]
+
+  for (const win of tryWindows) {
+    const st = fmtTs(win.start)
+    const et = fmtTs(win.end)
+    const spanHours = (win.end - win.start) / 3600000
+    const useInterval = spanHours > 3 ? 'auto' : 'raw'
+
+    try {
+      const res = await getDeviceParamData({
+        device_code: selectedDevice.value,
+        start_time: st,
+        end_time: et,
+        limit: 300000,
+        interval: useInterval,
+        p_names: [key],
+      })
+
+      if (res.code === 200 && res.data?.series && res.data.series[key]?.length > 0) {
+        LOADED_POINT_NAMES.value.add(key)
+        Object.assign(seriesData.value, res.data.series)
+        if (res.data.display_names) Object.assign(displayNames.value, res.data.display_names)
+        if (res.data.units) Object.assign(paramUnits.value, res.data.units)
+
+        // fallback 找到数据了：更新页面时间范围显示为数据的实际起止时间
+        if (win.label !== '当前范围') {
+          const pts = res.data.series[key]
+          const dataStart = pts[0]?.time
+          const dataEnd = pts[pts.length - 1]?.time
+          if (dataStart && dataEnd) {
+            startTime.value = toDatetimeLocal(new Date(dataStart.replace(' ', 'T')))
+            endTime.value = toDatetimeLocal(new Date(dataEnd.replace(' ', 'T')))
+            activeQuickRange.value = 'custom'
+          }
+        }
+        aggInterval.value = res.data.aggregated ? (res.data.interval || '') : ''
+
+        // 如果用了比当前更大的时间窗口，重新加载其他已显示的参数以对齐
+        if (win.label !== '当前范围' && visibleKeys.value.length > 0) {
+          await reloadVisibleParamsForRange(st, et)
+        }
+        return
+      }
+    } catch (err) {
+      console.error(`加载参数 ${key} 失败 (${win.label}):`, err)
+    }
+  }
+  // 所有窗口都无数据，标记已尝试过
+  LOADED_POINT_NAMES.value.add(key)
+}
+
+async function reloadVisibleParamsForRange(st, et) {
+  const spanHours = (new Date(et.replace(' ', 'T')) - new Date(st.replace(' ', 'T'))) / 3600000
+  const useInterval = spanHours > 3 ? 'auto' : 'raw'
+  const keys = visibleKeys.value.filter(k => seriesData.value[k])
+
+  if (keys.length === 0) return
+
+  try {
+    const res = await getDeviceParamData({
+      device_code: selectedDevice.value,
+      start_time: st,
+      end_time: et,
+      limit: 300000,
+      interval: useInterval,
+      p_names: keys,
+    })
+    if (res.code === 200 && res.data?.series) {
+      Object.assign(seriesData.value, res.data.series)
+      if (res.data.display_names) Object.assign(displayNames.value, res.data.display_names)
+      if (res.data.units) Object.assign(paramUnits.value, res.data.units)
+      for (const k of Object.keys(res.data.series)) {
+        LOADED_POINT_NAMES.value.add(k)
+      }
+      aggInterval.value = res.data.aggregated ? (res.data.interval || '') : ''
+    }
+  } catch (err) {
+    console.error('重载其他参数失败:', err)
+  }
+}
+
+async function tryWiderRangeFallback(allPointNames) {
+  // 初始加载时当前范围无数据，逐级扩展回退
+  const now = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const fmtTs = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+
+  const tryWindows = [
+    { label: '最近7天', start: new Date(now.getTime() - 7 * 86400000), end: now },
+    { label: '最近30天', start: new Date(now.getTime() - 30 * 86400000), end: now },
+    { label: '最近90天', start: new Date(now.getTime() - 90 * 86400000), end: now },
+  ]
+
+  for (const win of tryWindows) {
+    const st = fmtTs(win.start)
+    const et = fmtTs(win.end)
+    const spanHours = (win.end - win.start) / 3600000
+    const useInterval = spanHours > 3 ? 'auto' : 'raw'
+
+    try {
+      const allRes = await getDeviceParamData({
+        device_code: selectedDevice.value,
+        start_time: st,
+        end_time: et,
+        limit: 300000,
+        interval: useInterval,
+        p_names: allPointNames,
+      })
+
+      if (allRes.code === 200 && allRes.data?.series && Object.keys(allRes.data.series).length > 0) {
+        seriesData.value = allRes.data.series
+        visibleKeys.value = Object.keys(allRes.data.series).slice(0, DEFAULT_VISIBLE_COUNT)
+        // 确保 Tec_Stage 等阶段参数始终可见
+        for (const stageParam of allPointNames) {
+          if ((stageParam.includes('_Stage') || stageParam.includes('Stage')) &&
+              allRes.data.series[stageParam] && !visibleKeys.value.includes(stageParam)) {
+            visibleKeys.value.push(stageParam)
+          }
+        }
+        Object.assign(displayNames.value, allRes.data.display_names || {})
+        Object.assign(paramUnits.value, allRes.data.units || {})
+        aggInterval.value = allRes.data.aggregated ? (allRes.data.interval || '') : ''
+        for (const key of Object.keys(allRes.data.series)) {
+          LOADED_POINT_NAMES.value.add(key)
+        }
+        // fallback 找到数据：更新页面时间范围为数据实际起止时间
+        startTime.value = toDatetimeLocal(win.start)
+        endTime.value = toDatetimeLocal(win.end)
+        activeQuickRange.value = 'custom'
+        return true
+      }
+    } catch (err) {
+      console.error(`扩展范围加载失败 (${win.label}):`, err)
+    }
+  }
+  return false
+}
+
 async function toggleAll() {
   if (visibleKeys.value.length === seriesKeys.value.length) {
     visibleKeys.value = []
     updateChart()
   } else {
-    const unloadedKeys = seriesKeys.value.filter(k => !LOADED_POINT_NAMES.value.has(k))
+    const unloadedKeys = seriesKeys.value.filter(k => !LOADED_POINT_NAMES.value.has(k) || (seriesData.value[k] && seriesData.value[k].length === 0))
     if (unloadedKeys.length > 0) {
-      try {
-        const spanHours = (new Date(endTime.value) - new Date(startTime.value)) / 3600000
+      // 逐级回退尝试：当前范围 → 7天 → 30天 → 90天
+      const now = new Date()
+      const pad = (n) => String(n).padStart(2, '0')
+      const fmtTs = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+
+      const tryWindows = [
+        { label: '当前范围', start: new Date(startTime.value), end: new Date(endTime.value) },
+        { label: '最近7天', start: new Date(now.getTime() - 7 * 86400000), end: now },
+        { label: '最近30天', start: new Date(now.getTime() - 30 * 86400000), end: now },
+        { label: '最近90天', start: new Date(now.getTime() - 90 * 86400000), end: now },
+      ]
+
+      let foundAny = false
+      for (const win of tryWindows) {
+        const st = fmtTs(win.start)
+        const et = fmtTs(win.end)
+        const spanHours = (win.end - win.start) / 3600000
         const useInterval = spanHours > 3 ? 'auto' : 'raw'
 
-        const res = await getDeviceParamData({
-          device_code: selectedDevice.value,
-          start_time: formatForApi(startTime.value),
-          end_time: formatForApi(endTime.value),
-          limit: 300000,
-          interval: useInterval,
-          p_names: unloadedKeys,
-        })
+        try {
+          const res = await getDeviceParamData({
+            device_code: selectedDevice.value,
+            start_time: st,
+            end_time: et,
+            limit: 300000,
+            interval: useInterval,
+            p_names: unloadedKeys,
+          })
 
-        if (res.code === 200 && res.data?.series) {
-          Object.assign(seriesData.value, res.data.series)
-          if (res.data.display_names) {
-            Object.assign(displayNames.value, res.data.display_names)
+          if (res.code === 200 && res.data?.series) {
+            const foundKeys = Object.keys(res.data.series)
+            if (foundKeys.length > 0) {
+              Object.assign(seriesData.value, res.data.series)
+              if (res.data.display_names) Object.assign(displayNames.value, res.data.display_names)
+              if (res.data.units) Object.assign(paramUnits.value, res.data.units)
+              for (const k of foundKeys) LOADED_POINT_NAMES.value.add(k)
+
+              if (win.label !== '当前范围') {
+                startTime.value = toDatetimeLocal(win.start)
+                endTime.value = toDatetimeLocal(win.end)
+                activeQuickRange.value = 'custom'
+              }
+              aggInterval.value = res.data.aggregated ? (res.data.interval || '') : ''
+              foundAny = true
+            }
           }
-          if (res.data.units) {
-            Object.assign(paramUnits.value, res.data.units)
-          }
-          for (const key of Object.keys(res.data.series)) {
-            LOADED_POINT_NAMES.value.add(key)
-          }
+        } catch (err) {
+          console.error('全部加载失败:', err)
         }
-      } catch (err) {
-        console.error('加载参数数据失败:', err)
-        return
+        if (foundAny) break
+      }
+      // 标记剩余未加载的
+      for (const k of unloadedKeys) {
+        if (!LOADED_POINT_NAMES.value.has(k)) LOADED_POINT_NAMES.value.add(k)
       }
     }
     visibleKeys.value = [...seriesKeys.value]
@@ -2471,13 +1913,17 @@ function updateChart() {
     const values = allTimes.map((t) => timeMap.get(t) ?? null)
 
     // 用 markArea 在参数图上叠加运行时段背景
+    const isStageParam = key.includes('_Stage') || key.includes('Stage')
     const paramSeries = {
       name: displayName,
-      type: 'line', smooth: true, symbol: 'none',
-      lineStyle: { width: 1.5, color },
+      type: 'line',
+      step: isStageParam ? 'start' : undefined,
+      smooth: isStageParam ? false : true,
+      symbol: 'none',
+      lineStyle: { width: isStageParam ? 2.5 : 1.5, color },
       itemStyle: { color },
       data: values.map((v, i) => [parseTime(allTimes[i]), v]),
-      connectNulls: true,
+      connectNulls: isStageParam ? false : true,
       xAxisIndex: gridIdx, yAxisIndex: gridIdx,
     }
 
@@ -2800,12 +2246,16 @@ function buildOverlayChart() {
       const data = getSeries(pname)
       const pts = data.map(d => [parseTime(d.time), d.value]).filter(d => d[0] != null)
       const label = (displayNames.value[pname] || pname) + (paramUnits.value[pname] ? ' ('+paramUnits.value[pname]+')' : '')
+      const isStageParam = pname.includes('_Stage') || pname.includes('Stage')
 
       seriesList.push({
-        name: label, type: 'line', smooth: true, symbol: 'none',
-        lineStyle: { width: 1.5, color },
+        name: label, type: 'line',
+        step: isStageParam ? 'start' : undefined,
+        smooth: isStageParam ? false : true,
+        symbol: 'none',
+        lineStyle: { width: isStageParam ? 2.5 : 1.5, color },
         data: pts, xAxisIndex: gridIdx, yAxisIndex: gridIdx,
-        connectNulls: true,
+        connectNulls: isStageParam ? false : true,
       })
     }
 
@@ -2899,6 +2349,7 @@ function disposeChart() {
 }
 
 function handleResize() {
+  if (stateTimelineChart && !stateTimelineChart.isDisposed()) stateTimelineChart.resize()
   if (chartInstance && !chartInstance.isDisposed()) {
     chartInstance.resize()
   }
@@ -2944,7 +2395,115 @@ async function startAnalysis() {
 
 async function toggleAnalysisLog() {
   showAnalysisLog.value = !showAnalysisLog.value
-  if (showAnalysisLog.value) await loadAnalysisLog()
+  if (showAnalysisLog.value) {
+    await loadAnalysisLog()
+    await nextTick()
+    const el = document.getElementById('analysis-history-section')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+async function startStateAnalysis() {
+  if (!selectedDevice.value) return
+  if (!pulseParam.value) {
+    stateResult.value = { source: 'error', msg: '请先在「参数设定」页面中设置生产节拍(脉搏)参数' }
+    return
+  }
+  // 取消上一次请求，递增计数器，只有最新请求的响应才生效
+  if (_stateAbort) { _stateAbort.abort(); _stateAbort = null }
+  const abortCtrl = new AbortController()
+  _stateAbort = abortCtrl
+  const reqId = ++_stateRequestId
+
+  disposeStateTimeline()
+  stateResult.value = { source: 'loading' }
+  try {
+    const res = await client.post('/device-params/state-analysis', {
+      device_code: selectedDevice.value, device_name: currentDeviceName(),
+      pulse_param: pulseParam.value, days: stateDays.value,
+    }, { timeout: 0, signal: abortCtrl.signal })
+    if (reqId !== _stateRequestId) return  // 不是最新请求，忽略
+    if (res.code === 200 && res.data) {
+      stateResult.value = res.data
+      persistStateSnapshot()
+      await nextTick()
+      renderStateTimeline()
+    } else {
+      stateResult.value = { source: 'error', msg: res.msg || '状态分析失败' }
+    }
+  } catch (err) {
+    if (err?.name === 'CanceledError' || err?.name === 'AbortError') return
+    if (reqId !== _stateRequestId) return
+    stateResult.value = { source: 'error', msg: err.response?.data?.msg || err.message || '状态分析请求失败' }
+  } finally {
+    if (_stateAbort === abortCtrl) _stateAbort = null
+  }
+}
+
+
+// 状态分析出结果后自动落库（原弹窗底部的“确认”按钮已取消）。
+// 只推进度 + 存快照，不带 classified/checked_params，避免冲掉「参数设定」页的筛选结果
+function persistStateSnapshot() {
+  if (!stateResult.value || stateResult.value.source) return
+  client.post('/device-params/screen-state', {
+    device_code: selectedDevice.value,
+    workflow_step: 4,
+    pulse_param: pulseParam.value, state_data: stateResult.value,
+  }).catch(() => {})
+}
+
+async function startKpiAnalysis() {
+  if (!selectedDevice.value) return
+  if (!pulseParam.value) {
+    kpiResult.value = { source: 'error', msg: '请先在「参数设定」页面中设置生产节拍(脉搏)参数' }
+    return
+  }
+  kpiResult.value = { source: 'loading' }
+  try {
+    const res = await client.post('/device-params/kpi', {
+      device_code: selectedDevice.value, device_name: currentDeviceName(),
+      pulse_param: pulseParam.value, days: kpiDays.value,
+    }, { timeout: 0 })
+    if (res.code === 200 && res.data) kpiResult.value = res.data
+    else kpiResult.value = { source: 'error', msg: res.msg || 'KPI 计算失败' }
+  } catch (err) {
+    kpiResult.value = { source: 'error', msg: err.response?.data?.msg || err.message }
+  }
+}
+
+async function startStageCpkAnalysis() {
+  if (!selectedDevice.value) return
+  if (!pulseParam.value) {
+    stageCpkResult.value = { source: 'error', msg: '请先在「参数设定」页面中设置生产节拍(脉搏)参数' }
+    return
+  }
+  stageCpkResult.value = { source: 'loading' }
+  try {
+    const res = await client.post('/device-params/stage-cpk', {
+      device_code: selectedDevice.value, device_name: currentDeviceName(),
+      pulse_param: pulseParam.value, days: stageCpkDays.value,
+    }, { timeout: 0 })
+    if (res.code === 200 && res.data) stageCpkResult.value = res.data
+    else stageCpkResult.value = { source: 'error', msg: res.msg || '阶段CPK计算失败' }
+  } catch (err) {
+    stageCpkResult.value = { source: 'error', msg: err.response?.data?.msg || err.message }
+  }
+}
+
+// 读取「参数设定」页筛选保存的 checked_params —— 本页参数范围唯一依据，返回非空数组；
+// 没筛选过(无记录/从未保存)时返回 null，由调用方(loadData)回退到该设备全部参数。
+// 顺带同步 pulse_param / workflow_step / state_data，供其它 tab(状态/KPI/阶段CPK)使用。
+async function loadScreenStateFromDb() {
+  try {
+    const r = await client.get('/device-params/screen-state', { params: { device_code: selectedDevice.value } })
+    if (r.code === 200 && r.data) {
+      workflowStep.value = r.data.workflow_step || 2
+      if (r.data.pulse_param) pulseParam.value = r.data.pulse_param
+      if (r.data.state_data) stateResult.value = r.data.state_data
+      if (r.data.checked_params?.length) return r.data.checked_params
+    }
+  } catch (e) {}
+  return null
 }
 
 async function loadAnalysisLog() {
@@ -2966,16 +2525,21 @@ function viewAnalysisLogItem(item) {
   analysisError.value = ''
 }
 
-onMounted(() => {
-  loadDevices()
+onMounted(async () => {
+  await loadDevices()
+  const deviceFromQuery = route.query.device
+  if (deviceFromQuery && devices.value.some(d => d.device_code === deviceFromQuery)) {
+    selectedDevice.value = deviceFromQuery
+    onDeviceChange()
+  }
   resizeHandler = () => handleResize()
   window.addEventListener('resize', resizeHandler)
 })
 
 onUnmounted(() => {
   disposeChart()
-  disposeFeatureCharts()
-  disposeSparklines()
+  disposeStateTimeline()
+
   if (resizeHandler) {
     window.removeEventListener('resize', resizeHandler)
   }

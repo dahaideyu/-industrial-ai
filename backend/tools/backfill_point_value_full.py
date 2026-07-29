@@ -18,11 +18,11 @@ from psycopg2.extras import execute_values
 
 def connect():
     return psycopg2.connect(
-        host=os.getenv("PG_HOST", "10.1.2.227"),
+        host=os.getenv("PG_HOST", "127.0.0.1"),
         port=os.getenv("PG_PORT", "5432"),
         dbname=os.getenv("PG_DB", "knowledge_base"),
-        user=os.getenv("PG_USER", "postgres"),
-        password=os.getenv("PG_PASSWORD", "Focus&2025!"),
+        user=os.getenv("PG_USER", "zxzz"),
+        password=os.getenv("PG_PASSWORD", ""),
     )
 
 

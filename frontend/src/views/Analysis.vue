@@ -264,7 +264,9 @@ async function runAnalysis() {
       error.value = res.msg || '分析失败'
     }
   } catch (err) {
-    error.value = '请求错误: ' + err.message
+    error.value = err.response
+      ? ('请求错误: ' + (err.response.data?.msg || err.message))
+      : '连不上后端服务，请检查后端是否正常运行。'
   } finally {
     loading.value = false
   }

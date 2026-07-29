@@ -49,7 +49,7 @@
             ┌───────────────────┼───────────────────┐
             ▼                   ▼                    ▼
       MySQL (外部)       RAGFlow (外部)       DeepSeek API
-      10.1.2.227:3306   10.1.2.232:9380      api.deepseek.com
+      CHANGE_ME:3306   10.1.2.232:9380      api.deepseek.com
 ```
 
 **设计要点：**
@@ -149,7 +149,7 @@ vim .env
 
 ```env
 # ===== 必须修改 =====
-DEEPSEEK_API_KEY=sk-REDACTED
+DEEPSEEK_API_KEY=sk-your-actual-api-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 DEEPSEEK_MODEL=deepseek-chat
 
@@ -269,7 +269,7 @@ ENABLE_SQL_QA=true docker compose -f docker/docker-compose.yml -f docker/docker-
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥 | `sk-xxx` |
 | `DEEPSEEK_BASE_URL` | API 地址 | `https://api.deepseek.com/v1` |
 | `DEEPSEEK_MODEL` | 模型名称 | `deepseek-v4-flash` |
-| `MYSQL_HOST` | MySQL 主机地址 | `10.1.2.227` |
+| `MYSQL_HOST` | MySQL 主机地址 | `CHANGE_ME` |
 | `MYSQL_PORT` | MySQL 端口 | `3306` |
 | `MYSQL_USER` | 数据库用户名 | `zxzz` |
 | `MYSQL_PASSWORD` | 数据库密码 | `your-password` |
@@ -519,4 +519,3 @@ docker compose -f docker/docker-compose.yml exec chaowei-agent nslookup your-mys
 | `docker/nginx/nginx.conf` | Nginx 反向代理配置 |
 | `docker/scripts/deploy.sh` | 一键部署脚本 |
 | `.dockerignore` | 排除不需要打包到镜像的文件（在根目录） |
-

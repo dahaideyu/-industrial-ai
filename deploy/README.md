@@ -146,11 +146,11 @@ RAGFLOW_URL_OVERWRITE=1           # RAGFLOW_BASE_URL 指向别的机器时也强
 首次部署前创建目录，例如：
 
 ```bash
-sudo mkdir -p /opt/chaowei-agent
-sudo chown -R "$USER:$USER" /opt/chaowei-agent
+sudo mkdir -p /opt/industrial-ai
+sudo chown -R "$USER:$USER" /opt/industrial-ai
 ```
 
-首次 pipeline 会同步代码。部署脚本校验的 env 文件是 `deploy/docker/.env`（compose 变量替换和容器 env_file 都读这一份）；服务器上没有时脚本直接失败，需参考 `deploy/docker/.env.example` 手动创建 `/opt/chaowei-agent/deploy/docker/.env` 并填入真实配置后重新运行 pipeline。
+首次 pipeline 会同步代码。部署脚本校验的 env 文件是 `deploy/docker/.env`（compose 变量替换和容器 env_file 都读这一份）；服务器上没有时脚本直接失败，需参考 `deploy/docker/.env.example` 手动创建 `/opt/industrial-ai/deploy/docker/.env` 并填入真实配置后重新运行 pipeline。
 
 ## GitLab / git.anosi.cn CI 变量
 
@@ -161,7 +161,7 @@ sudo chown -R "$USER:$USER" /opt/chaowei-agent
 | `DEPLOY_HOST` | `192.168.1.10` | Linux 服务器 IP 或域名 |
 | `DEPLOY_USER` | `deploy` | SSH 用户 |
 | `DEPLOY_PORT` | `22` | SSH 端口，可不填 |
-| `DEPLOY_PATH` | `/opt/chaowei-agent` | 服务器部署目录 |
+| `DEPLOY_PATH` | `/opt/industrial-ai` | 服务器部署目录 |
 | `DEPLOY_SSH_PRIVATE_KEY` | 私钥内容 | 能登录服务器的 SSH 私钥 |
 | `DEPLOY_BRANCH` | `master` | 自动部署分支（默认 master，见 .gitlab-ci.yml） |
 | `APP_PORT` | `9300` | 对外访问端口，可不填 |
@@ -174,7 +174,7 @@ sudo chown -R "$USER:$USER" /opt/chaowei-agent
 已同步代码后，也可以在服务器手动执行：
 
 ```bash
-cd /opt/chaowei-agent
+cd /opt/industrial-ai
 APP_PORT=9300 PROVIDER=deepseek bash deploy/remote-deploy.sh
 ```
 

@@ -11,9 +11,7 @@ import queue as threading_queue
 from datetime import datetime, timedelta
 from typing import AsyncGenerator, Dict, List, Optional
 
-from openai import OpenAI
-
-from core.config import CONFIG
+from core.config import CONFIG, get_llm_client
 from modules.device_warning.ai_analysis.postgres_loader import PostgresDB
 from .data_aggregator import DataAggregator
 from .analysis_integrator import AnalysisIntegrator
@@ -29,11 +27,7 @@ class MaintenanceReportGenerator:
 
     def get_llm(self):
         """获取 LLM 实例"""
-        return OpenAI(
-            base_url=CONFIG["base_url"],
-            api_key=CONFIG["api_key"],
-            timeout=600.0
-        )
+        return get_llm_client(timeout=600.0)
 
     async def generate_device_report(
         self,

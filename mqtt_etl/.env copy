@@ -5,14 +5,9 @@ MQTT_TOPIC=Alarm/chaowei/jxcw
 # 样例后再改造成结构化解析（见 README「device_nh_raw」）
 MQTT_TOPIC_NH=NH/chaowei/jxcw
 MQTT_USER=admin
-MQTT_PASS=CHANGE_ME
+MQTT_PASS=zxzz@4*cloud-2022!
 MQTT_QOS=0
 
-DB_HOST=10.1.2.227
-DB_PORT=5432
-DB_NAME=postgres
-DB_USER=postgres
-DB_PASS=CHANGE_ME
 
 BATCH_SIZE=200
 BATCH_TIMEOUT=5

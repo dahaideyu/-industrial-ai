@@ -1,0 +1,14 @@
+[Unit]
+Description=每分钟检查一次 Gitee dev 分支是否有新提交
+
+[Timer]
+# 开机 2 分钟后开始，之后每分钟一次。
+# 脚本本身"无变更就静默退出"，跑得频繁不会有副作用，也不会刷日志。
+OnBootSec=2min
+OnUnitActiveSec=1min
+# 错过的执行（比如机器关机期间）开机后立即补一次
+Persistent=true
+Unit=industrial-ai-deploy.service
+
+[Install]
+WantedBy=timers.target

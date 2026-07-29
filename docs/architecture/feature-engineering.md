@@ -55,7 +55,7 @@ cntlm.exe -f -v -c D:\tools\Cntlm\cntlm_bosch.ini
 ```python
 psycopg2.connect(
     host="127.0.0.1", port=15432,
-    user="postgres", password="Focus&2025!",
+    user="postgres", password="CHANGE_ME",
     sslmode="disable",      # SSL 在 HTTP CONNECT 隧道中不稳定
     keepalives=1,           # TCP keepalive 防止代理 idle timeout 断连
     keepalives_idle=30,     # 30s 无数据后发 keepalive

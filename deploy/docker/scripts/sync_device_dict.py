@@ -47,7 +47,7 @@ def env_first(*names: str, default: str = "") -> str:
 
 def connect_mysql():
     cfg = dict(
-        host=env_first("MYSQL_HOST", "AQA_MYSQL_HOST", default="10.1.2.227"),
+        host=env_first("MYSQL_HOST", "AQA_MYSQL_HOST", default="CHANGE_ME"),
         port=int(env_first("MYSQL_PORT", "AQA_MYSQL_PORT", default="3306")),
         user=env_first("MYSQL_USER", "AQA_MYSQL_USER", default="zxzz"),
         password=env_first("MYSQL_PASSWORD", "AQA_MYSQL_PASSWORD"),
@@ -62,7 +62,7 @@ def connect_mysql():
 
 def connect_pg():
     kwargs = dict(
-        host=os.getenv("POSTGRES_HOST", "10.1.2.227"),
+        host=os.getenv("POSTGRES_HOST", "CHANGE_ME"),
         port=os.getenv("POSTGRES_PORT", "5432"),
         dbname=os.getenv("POSTGRES_DB") or os.getenv("PG_DB") or "postgres",
         user=os.getenv("POSTGRES_USER", "postgres"),

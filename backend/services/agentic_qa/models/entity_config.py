@@ -1,8 +1,37 @@
 # cython: annotation_typing=False, infer_types=False, language_level=3
+import json
+import re
+
 from sqlalchemy import String, Integer, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from backend.core.agentic_qa.database import Base
-import json
+
+# table_name/label_column/value_column/search_columns/context_columns 和
+# filter_condition 会被 entity_resolver 直接拼进 f-string SQL 执行（标识符没法走
+# 参数化占位符），这几个字段又是这个 /admin 接口可写的——不校验的话相当于让能调
+# 这个接口的人拼任意 SQL。下面两个校验函数在写入（admin.py）和使用
+# （entity_resolver.py）两端都会调用，双重兜底。
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# filter_condition 本质是"管理员可配置的原始 WHERE 片段"，没法做到 100% 安全校验
+# （比如合法的 "OR" 连接词没法跟注入区分开），这里只收紧最明确的攻击手段：
+# 分号叠加语句、--/#/\/* 注释截断、反引号逃逸标识符
+_FILTER_CONDITION_ALLOWED_RE = re.compile(r"^[A-Za-z0-9_.,()'\"=<>!\s]*$")
+
+
+def validate_identifier(name: str, field_name: str) -> str:
+    """校验表名/列名：只允许字母数字下划线，防止拼进 SQL 时逃逸出标识符。"""
+    if not name or not _IDENTIFIER_RE.match(name):
+        raise ValueError(f"{field_name} 只能包含字母、数字、下划线，且不能以数字开头：{name!r}")
+    return name
+
+
+def validate_filter_condition(condition: str) -> str:
+    """校验 filter_condition：禁止分号/注释符/反引号等常见 SQL 注入手法。"""
+    if condition is None:
+        return condition
+    if not _FILTER_CONDITION_ALLOWED_RE.match(condition):
+        raise ValueError(f"filter_condition 包含不允许的字符（禁止分号、注释符、反引号等）：{condition!r}")
+    return condition
 
 
 class EntityConfig(Base):

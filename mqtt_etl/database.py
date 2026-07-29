@@ -59,21 +59,6 @@ class DatabaseWriter:
                 """)
 
                 cur.execute("""
-                    CREATE TABLE IF NOT EXISTS public.device_nh_raw (
-                        id bigserial PRIMARY KEY,
-                        topic varchar(255) NOT NULL,
-                        raw_json jsonb NULL,
-                        raw_text text NULL,
-                        received_at timestamp NOT NULL,
-                        load_time timestamp NULL
-                    )
-                """)
-                cur.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_device_nh_raw_received_at
-                    ON public.device_nh_raw (received_at)
-                """)
-
-                cur.execute("""
                     CREATE TABLE IF NOT EXISTS public.device_energy_info (
                         device_id varchar(255) NOT NULL,
                         device_status varchar(255) NULL,
@@ -128,7 +113,7 @@ class DatabaseWriter:
                 """)
 
             self.conn.commit()
-            logger.info("Schema check passed (device_alarm_info / device_nh_raw / device_energy_info ensured as hypertables)")
+            logger.info("Schema check passed (device_alarm_info / device_energy_info ensured as hypertables)")
         except Exception as e:
             logger.error(f"Failed to ensure schema: {e}")
             self.conn.rollback()
@@ -178,37 +163,6 @@ class DatabaseWriter:
             if self.conn:
                 self.conn.rollback()
             self._save_failed_batch(records, raw_json, source="alarm")
-
-    def write_nh_raw_batch(self, records: List[Tuple], raw_json: dict = None):
-        """NH topic 原样落库：一条 MQTT 消息一行，(topic, raw_json, raw_text, received_at)。
-        表结构见 README「device_nh_raw」，拿到真实数据结构后再改成结构化解析+专属表。"""
-        if not records:
-            return
-
-        self._ensure_connection()
-        if self.conn is None:
-            self._save_failed_batch(records, raw_json, source="nh_raw")
-            return
-
-        try:
-            with self.conn.cursor() as cur:
-                load_time = datetime.now()
-                sql_query = sql.SQL("""
-                    INSERT INTO public.device_nh_raw (
-                        topic, raw_json, raw_text, received_at, load_time
-                    ) VALUES %s
-                """)
-
-                records_with_loadtime = [rec + (load_time,) for rec in records]
-
-                execute_values(cur, sql_query, records_with_loadtime)
-                self.conn.commit()
-                logger.info(f"Successfully inserted {len(records)} NH raw records")
-        except Exception as e:
-            logger.error(f"Failed to write NH raw batch: {e}")
-            if self.conn:
-                self.conn.rollback()
-            self._save_failed_batch(records, raw_json, source="nh_raw")
 
     def write_energy_batch(self, records: List[Tuple], raw_json: dict = None):
         """电表能耗点位批量写入 device_energy_info，写法和 write_alarm_batch 一致。"""

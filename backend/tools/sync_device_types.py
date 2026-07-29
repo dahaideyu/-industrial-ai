@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 MYSQL_CONFIG = {
     "host": "192.168.50.213",
     "port": 3306,
-    "user": "readonly_user",
-    "password": "read@2026",
+    "user": "CHANGE_MEonly_user",
+    "password": "CHANGE_ME@2026",
     "database": "btr",
     "charset": "utf8mb4",
 }
@@ -26,7 +26,7 @@ PG_CONFIG = {
     "host": "192.168.50.224",
     "port": 15432,
     "user": "zxzz",
-    "password": "Admin@Zxzz",
+    "password": "CHANGE_ME@Zxzz",
     "database": "knowledge_base",
 }
 

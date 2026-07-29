@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     """PLC 解析服务配置"""
 
     # DashScope API 配置
-    dashscope_api_key: str = "sk-REDACTED"
+    dashscope_api_key: str = "CHANGE_ME"
     dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     # 模型配置
@@ -30,4 +30,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

@@ -1,4 +1,4 @@
-# Chaowei Agent — Docker Compose
+# Industrial AI — Docker Compose
 # 用法:
 #   开发: docker compose -f deploy/docker/docker-compose.yml up -d
 #   测试: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.test.yml up -d
@@ -23,8 +23,11 @@ services:
     # 固定镜像名/tag（不依赖 compose 项目名自动生成的名字）：离线打包时
     # `docker save/load` 按这个名字操作，`docker compose up` 不加 --build
     # 也能直接复用 load 进来的镜像，不会因为名字对不上而在服务器上重新构建。
-    # 与 knb-celery-worker/repair-suggestion/mqtt-etl 用同一个 ${IMAGE_NAME}，
-    # 保证四个服务永远指向同一镜像。
+    # Dockerfile 按依赖分了 3 个 target（不用全部塞进一个大镜像）：
+    #   final-app（本服务，默认 target，含 nginx+前端+LibreOffice）
+    #   final-worker（knb-celery-worker 用，含 LibreOffice+OCR，不含 nginx/前端）
+    #   final-base（repair-suggestion/mqtt-etl 用，纯后端运行时）
+    # 三个 target 各自独立打 tag，不再共用同一个镜像名。
     image: ${IMAGE_NAME:-industrial-ai}:${IMAGE_TAG:-latest}
     build:
       context: ../..
@@ -49,10 +52,15 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
 
   # ========== 系统级共享服务（知识库 / agentic_qa / device_param 等模块共用）==========
   # PostgreSQL/TimescaleDB —— 本地开发用容器化数据库（feature/local-timescaledb-docker 新增）。
-  # 生产/测试环境默认仍连外部独立服务器 10.1.2.227（PG_HOST 指向那边），
+  # 生产/测试环境默认仍连外部独立服务器 CHANGE_ME（PG_HOST 指向那边），
   # 此服务默认不随 `docker compose up` 启动，需要本地免隧道开发时显式加 profile：
   #   docker compose -f deploy/docker/docker-compose.yml --profile local-db up -d postgresql
   # 所有应用表统一存放于 ${PG_DB:-knowledge_base} 库：
@@ -71,7 +79,9 @@ services:
     environment:
       POSTGRES_DB: ${PG_DB:-knowledge_base}
       POSTGRES_USER: ${PG_USER:-zxzz}
-      POSTGRES_PASSWORD: ${PG_PASSWORD:-Admin@Zxzz}
+      # 强制要求 .env 里显式设置密码：没设置就直接报错退出，
+      # 不会像 ${VAR:-弱密码} 那样在 .env 缺失/漏填时静默用弱默认密码启动
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?请在 .env 中设置 PG_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-sql:/docker-entrypoint-initdb.d:ro
@@ -92,15 +102,16 @@ services:
     restart: unless-stopped
     profiles: ["legacy"]
     ports:
-      - "${KNB_PG_HOST_PORT:-15432}:5432"
+      - "${PG_HOST_PORT:-15432}:5432"
     environment:
-      POSTGRES_DB: ${KNB_PG_DB:-knowledge_base}
-      POSTGRES_USER: ${KNB_PG_USER:-zxzz}
-      POSTGRES_PASSWORD: ${KNB_PG_PASSWORD:-Admin@Zxzz}
+      POSTGRES_DB: ${PG_DB:-knowledge_base}
+      POSTGRES_USER: ${PG_USER:-zxzz}
+      # 与上面的 postgresql 用同一组 PG_* 变量，不再单独维护 KNB_PG_* 那一套
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?请在 .env 中设置 PG_PASSWORD}
     volumes:
       - knb_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${KNB_PG_USER:-zxzz} -d ${KNB_PG_DB:-knowledge_base}"]
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-zxzz} -d ${PG_DB:-knowledge_base}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -147,7 +158,8 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-zxzz}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-Admin@Zxzz}
+      # 强制要求 .env 里显式设置密钥：没设置就直接报错退出，不会静默用弱默认密码启动
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?请在 .env 中设置 MINIO_SECRET_KEY}
       # 覆盖镜像默认的 *_FILE 变量，否则 MinIO 会从文件读取凭据而忽略上述 env
       MINIO_ROOT_USER_FILE: ""
       MINIO_ROOT_PASSWORD_FILE: ""
@@ -176,8 +188,9 @@ services:
       - "9003:9001"
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${KNB_MINIO_ACCESS_KEY:-zxzz}
-      MINIO_ROOT_PASSWORD: ${KNB_MINIO_SECRET_KEY:-Admin123@Zxzz}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-zxzz}
+      # 与上面的 minio 用同一组 MINIO_* 变量
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?请在 .env 中设置 MINIO_SECRET_KEY}
     volumes:
       - knb_minio_data:/data
     healthcheck:
@@ -186,24 +199,13 @@ services:
       timeout: 5s
       retries: 5
 
-  knb-libreoffice:
-    image: linuxserver/libreoffice:latest
-    container_name: knb-libreoffice
-    restart: unless-stopped
-    environment:
-      PUID: 1000
-      PGID: 1000
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-
   knb-celery-worker:
-    image: ${IMAGE_NAME:-industrial-ai}:${IMAGE_TAG:-latest}
+    # 独立镜像名：只含 LibreOffice+OCR，不含 nginx/前端（比 industrial-ai 镜像小）
+    image: ${IMAGE_NAME:-industrial-ai}-worker:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      target: final-worker
       args:
         COMPILE_SOURCE: "${COMPILE_SOURCE:-true}"
     container_name: knb-celery-worker
@@ -217,14 +219,12 @@ services:
       -Q kb_convert,kb_extract,kb_review,kb_sync,kb_plc,kb_eval
       --concurrency=4 --loglevel=info
     depends_on:
-      # postgresql: 已临时停用（2026-07：改用外部独立 PG 10.1.2.227）
+      # postgresql: 已临时停用（2026-07：改用外部独立 PG CHANGE_ME）
       # 取消注释下方两行可恢复容器内 PG
       # postgresql:
       #   condition: service_healthy
       redis:
         condition: service_healthy
-      knb-libreoffice:
-        condition: service_started
     volumes:
       - ../../data:/app/data
     deploy:
@@ -235,10 +235,12 @@ services:
 
   # ========== 维修工单评分服务（独立服务） ==========
   repair-suggestion:
-    image: ${IMAGE_NAME:-industrial-ai}:${IMAGE_TAG:-latest}
+    # 精简镜像：不需要 nginx/LibreOffice/OCR，与 mqtt-etl 共用同一个 -lean 镜像
+    image: ${IMAGE_NAME:-industrial-ai}-lean:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      target: final-base
       args:
         COMPILE_SOURCE: "${COMPILE_SOURCE:-true}"
     container_name: repair-suggestion
@@ -261,10 +263,12 @@ services:
 
   # ========== MQTT ETL 服务（可选，通过 profile 控制） ==========
   mqtt-etl:
-    image: ${IMAGE_NAME:-industrial-ai}:${IMAGE_TAG:-latest}
+    # 精简镜像：不需要 nginx/LibreOffice/OCR，与 repair-suggestion 共用同一个 -lean 镜像
+    image: ${IMAGE_NAME:-industrial-ai}-lean:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      target: final-base
       args:
         COMPILE_SOURCE: "${COMPILE_SOURCE:-true}"
     container_name: mqtt-etl
@@ -277,7 +281,7 @@ services:
       python /app/mqtt_etl/main.py
     profiles: ["mqtt"]
     # postgresql 依赖已去掉：postgresql 在 local-db profile 里，单独 --profile mqtt 启动会因
-    # 依赖服务未启用直接报错；且生产/测试连外部 PG（10.1.2.227）时也不应强制拉起本地库容器。
+    # 依赖服务未启用直接报错；且生产/测试连外部 PG（CHANGE_ME）时也不应强制拉起本地库容器。
     # 本地全容器开发需同时启用两个 profile：--profile mqtt --profile local-db up -d
     # （mqtt_etl 自带断线重连 + dead_letter 兜底，PG 未就绪时不会丢数据）
     # depends_on:

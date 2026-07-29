@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 REM ============================================
-REM Chaowei Agent Windows 一键部署脚本
+REM Industrial AI Windows 一键部署脚本
 REM 用法: deploy.bat [操作]
 REM   操作: up（默认）| build | down | restart | status | logs
 REM 说明: up/restart 不带 --build —— 镜像已存在（docker load 或此前构建过）
@@ -15,7 +15,7 @@ set ACTION=%1
 if "%ACTION%"=="" set ACTION=up
 
 echo ==========================================
-echo   Chaowei Agent - Windows Docker 部署
+echo   Industrial AI - Windows Docker 部署
 echo   操作: %ACTION%
 echo ==========================================
 

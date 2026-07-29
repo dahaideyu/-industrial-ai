@@ -13,7 +13,8 @@ from pydantic import BaseModel
 
 from core.response import success_response, error_response
 from .services import TimescaleDB
-from .analysis_service import analyze_device_params
+from .analysis_service import analyze_device_params, screen_params, save_screen_state, load_screen_state, discover_pulse_params, analyze_state_from_pulse
+from .kpi_analysis import compute_kpi_summary, compute_stage_cpk
 from .anomaly_detector import AnomalyDetector, get_detector
 from .stage_analysis import analyze_stages, save_state_groups, detect_stage_param
 from . import stats_store
@@ -85,7 +86,7 @@ def get_param_data(
     p_names: Optional[List[str]] = Query(None, description="多个点位名称，逗号分隔（优先级高于 p_name）"),
     start_time: Optional[str] = Query(None, description="开始时间 (YYYY-MM-DD HH:MM:SS)"),
     end_time: Optional[str] = Query(None, description="结束时间 (YYYY-MM-DD HH:MM:SS)"),
-    hours: int = Query(24, ge=1, le=168, description="查询最近多少小时（当未指定时间范围时）"),
+    hours: int = Query(24, ge=1, le=720, description="查询最近多少小时（当未指定时间范围时）"),
     limit: int = Query(300000, ge=1, le=500000, description="最大返回条数"),
     interval: str = Query("raw", description="聚合粒度: raw(原始) / auto(按跨度自动) / 5min / 15min / 1hour / 4hour / 1day"),
 ):
@@ -889,10 +890,21 @@ def get_auto_thresholds(device_code: str = Query(..., description="设备编号"
         db.close()
 
 
+@router.get("/profile/cpk-config")
+def get_cpk_config():
+    """中位数过滤上下限比例 + CPK目标值的当前默认配置（来自 config/cpk_recalc_config.yaml）。"""
+    try:
+        return success_response(data=param_profile.get_cpk_recalc_config())
+    except Exception as e:
+        return error_response(msg=f"读取CPK配置失败: {e}", code=500)
+
+
 class RecalcSpecRequest(BaseModel):
     device_code: str
     p_name: str
-    cpk_target: float = 1.33
+    cpk_target: Optional[float] = None
+    median_filter_low_pct: Optional[float] = None
+    median_filter_high_pct: Optional[float] = None
 
 
 @router.post("/profile/recalc-spec")
@@ -909,7 +921,10 @@ def recalc_param_spec(req: RecalcSpecRequest):
         return error_response(msg="TimescaleDB 数据库连接失败", code=500)
     try:
         result = param_profile.recalc_spec_limits(
-            db.conn, req.device_code, req.p_name, cpk_target=req.cpk_target)
+            db.conn, req.device_code, req.p_name,
+            cpk_target=req.cpk_target,
+            median_filter_low_pct=req.median_filter_low_pct,
+            median_filter_high_pct=req.median_filter_high_pct)
         if "error" in result:
             return error_response(msg=result["error"], code=400)
         return success_response(data=result)
@@ -1086,11 +1101,221 @@ def diagnose_device(
                     diag_worker._upsert(db.conn, device_code, _date.today(), result)
                 finally:
                     db.close()
+            return success_response(data=result)
         return success_response(data=result)
     except Exception as e:
         import traceback
         traceback.print_exc()
         return error_response(msg=f"诊断失败: {str(e)}", code=500)
+
+
+class ScreenParamsRequest(BaseModel):
+    device_code: str
+    device_name: Optional[str] = None
+    days: int = 7
+
+
+@router.post("/screen-params")
+async def screen_device_params(req: ScreenParamsRequest):
+    """AI + 知识库筛选设备参数：找出脉搏参数、过滤无变化参数。"""
+    if not req.device_code:
+        return error_response(msg="缺少 device_code", code=400)
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 数据库连接失败", code=500)
+    try:
+        result = await screen_params(
+            req.device_code,
+            req.device_name or req.device_code,
+            db.conn,
+            days=req.days,
+        )
+        if "error" in result:
+            return error_response(msg=result["error"], code=400)
+        return success_response(data=result)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return error_response(msg=f"参数筛选失败: {str(e)}", code=500)
+    finally:
+        db.close()
+
+
+class SaveScreenStateRequest(BaseModel):
+    device_code: str
+    # None = 本次不涉及该字段(保留库里原值)；[] = 明确清空。只更新进度的调用方
+    # 不要传 classified/checked_params，否则会冲掉「参数设定」页保存的筛选结果。
+    classified: Optional[list] = None
+    checked_params: Optional[list] = None
+    workflow_step: int = 1
+    pulse_param: Optional[str] = None
+    state_data: Optional[dict] = None
+
+
+@router.post("/screen-state")
+def set_screen_state(req: SaveScreenStateRequest):
+    """保存设备参数筛选状态到数据库。"""
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        save_screen_state(
+            db.conn, req.device_code, req.classified,
+            req.checked_params, req.workflow_step,
+            pulse_param=req.pulse_param, state_data=req.state_data)
+        return success_response(data={"saved": True})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"保存失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+@router.get("/screen-state")
+def get_screen_state(device_code: str = Query(...)):
+    """加载设备参数筛选状态。"""
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        state = load_screen_state(db.conn, device_code)
+        return success_response(data=state or {})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"加载失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+class PulseDiscoverRequest(BaseModel):
+    device_code: str
+    device_name: Optional[str] = None
+    days: int = 7
+
+
+@router.post("/pulse-discover")
+def discover_pulse(req: PulseDiscoverRequest):
+    """Step ② 脉搏发现：分析周期性推荐cycle参数。"""
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        result = discover_pulse_params(
+            db.conn, req.device_code, req.device_name or req.device_code, days=req.days)
+        if "error" in result:
+            return error_response(msg=result["error"], code=400)
+        return success_response(data=result)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"脉搏发现失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+class StateAnalysisRequest(BaseModel):
+    device_code: str
+    device_name: Optional[str] = None
+    pulse_param: str
+    days: int = 1
+
+
+@router.post("/state-analysis")
+def analyze_device_state(req: StateAnalysisRequest):
+    """Step ③ 状态划分：基于脉搏参数分类运行/非运行/离线。"""
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        result = analyze_state_from_pulse(
+            db.conn, req.device_code, req.device_name or req.device_code,
+            req.pulse_param, days=req.days)
+        if "error" in result:
+            return error_response(msg=result["error"], code=400)
+        return success_response(data=result)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"状态分析失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+class EfficiencyAnalysisRequest(BaseModel):
+    device_code: str
+    device_name: Optional[str] = None
+    pulse_param: str
+    days: int = 7
+
+
+class KpiRequest(BaseModel):
+    device_code: str
+    device_name: Optional[str] = None
+    pulse_param: str
+    days: int = 1
+
+
+@router.post("/kpi")
+def compute_device_kpi(req: KpiRequest):
+    """Step ⑤ KPI：产量(剔除空跑)/合格率/节拍/OEE/运转率/单件能耗 + AI语义对齐。"""
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        result = compute_kpi_summary(db, req.device_code, req.pulse_param, days=req.days)
+        if "error" in result:
+            return error_response(msg=result["msg"], code=400)
+        return success_response(data=result)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"KPI 计算失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+class StageCpkRequest(BaseModel):
+    device_code: str
+    device_name: Optional[str] = None
+    pulse_param: str
+    days: int = 7
+
+
+@router.post("/efficiency-analysis")
+def analyze_device_efficiency(req: EfficiencyAnalysisRequest):
+    """Step ④ 效率分析：识别"房子"波形，算产量/节拍/OEE/运转率。"""
+    from .analysis_service import analyze_efficiency
+
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        result = analyze_efficiency(
+            db.conn, req.device_code, req.device_name or req.device_code,
+            req.pulse_param, days=req.days)
+        if "error" in result:
+            return error_response(msg=result["error"], code=400)
+        return success_response(data=result)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"效率分析失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+@router.post("/stage-cpk")
+def compute_device_stage_cpk(req: StageCpkRequest):
+    """Step ⑥ 阶段：按脉搏切段，阶段时长CPK/参数CPK(已确认规格限)/阶段能耗 + 分阶段AI语义对齐。"""
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        result = compute_stage_cpk(db, req.device_code, req.pulse_param, days=req.days)
+        if "error" in result:
+            return error_response(msg=result["msg"], code=400)
+        return success_response(data=result)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"阶段CPK计算失败: {e}", code=500)
+    finally:
+        db.close()
 
 
 @router.get("/diagnosis")
@@ -1384,19 +1609,22 @@ def detect_anomalies(request: AnomalyDetectRequest):
         if timeline_df.empty:
             return error_response(msg="检测失败，无有效数据点", code=500)
 
-        # 7. 构建响应
-        health_timeline = []
-        for idx, row in timeline_df.iterrows():
-            health_timeline.append({
-                "timestamp": str(idx),
-                "health_index": float(row["health_index"]),
-                "if_score": float(row["if_anomaly_score"]),
-                "iqr_score": float(row["iqr_score"]),
-                "alarm_penalty": float(row["alarm_penalty"]),
-                "severity": row["severity"],
-                "is_anomaly": bool(row["is_anomaly"]),
-                "contributing_params": row.get("contributing_params", []),
-            })
+        # 7. 构建响应（用 to_dict("records") 替代 iterrows：后者逐行重建 Series 很慢，
+        # 前者内部走向量化实现，数据点一多（几千个时间点）响应延迟差距明显）
+        has_contributing_params = "contributing_params" in timeline_df.columns
+        health_timeline = [
+            {
+                "timestamp": str(ts),
+                "health_index": float(rec["health_index"]),
+                "if_score": float(rec["if_anomaly_score"]),
+                "iqr_score": float(rec["iqr_score"]),
+                "alarm_penalty": float(rec["alarm_penalty"]),
+                "severity": rec["severity"],
+                "is_anomaly": bool(rec["is_anomaly"]),
+                "contributing_params": rec["contributing_params"] if has_contributing_params else [],
+            }
+            for ts, rec in zip(timeline_df.index, timeline_df.to_dict("records"))
+        ]
 
         # 异常时段汇总
         anomaly_periods = []
@@ -1772,14 +2000,8 @@ async def analyze_params(request: ParamAnalysisRequest):
             running_periods = db.get_running_periods(device_id, status_code, st, et)
 
         # 根据参数决定是否过滤运行时段
-        if request.analyze_running_only:
-            if not running_periods:
-                return success_response(data={
-                    "analysis": "该设备在指定时间范围内没有运行时段数据，无法进行分析。",
-                    "running_periods": [],
-                    "compressed_data": None,
-                })
-            # 只使用运行时段的数据
+        if request.analyze_running_only and running_periods:
+            # 使用运行时段的数据
             compressed = db.get_compressed_param_data(
                 device_code=request.device_code,
                 p_name=request.p_name,
@@ -1807,7 +2029,7 @@ async def analyze_params(request: ParamAnalysisRequest):
             time_range={"start_time": st.strftime("%Y-%m-%d %H:%M:%S"), "end_time": et.strftime("%Y-%m-%d %H:%M:%S")},
             running_periods=running_periods,
             compressed_data=compressed,
-            analyze_running_only=request.analyze_running_only,
+            analyze_running_only=request.analyze_running_only and bool(running_periods),
         )
 
         try:

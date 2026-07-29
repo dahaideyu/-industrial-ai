@@ -4,11 +4,10 @@ import json
 import logging
 from datetime import date, datetime, timezone
 
-import requests
 from sqlalchemy.orm import Session
 
-from backend.core.knowledge_management.config import settings
 from backend.core.knowledge_management.exceptions import NotFoundError
+from backend.services.knowledge_management.llm_client import call_llm
 from backend.core.knowledge_management.models import (
     CollectionPlan,
     Document,
@@ -127,7 +126,7 @@ class EvaluationService:
 {{}}""".format(category.name, target.name, target.target_type, requirement_desc, item.priority, due_info, overdue, len(approved_versions), json.dumps(doc_summaries, ensure_ascii=False, indent=2), "overall_completion")
 
         try:
-            result = self._call_llm(prompt)
+            result = call_llm(prompt)
             eval_data = json.loads(result)
 
             item.overall_completion = eval_data.get("overall_completion", "")
@@ -242,7 +241,7 @@ class EvaluationService:
 3. 建议优先处理的方向""".format(plan.name, total, stats['completed'], stats['improving'], stats['missing'], stats['overdue'], progress, chr(10).join(item_details))
 
         try:
-            analysis = self._call_llm(prompt)
+            analysis = call_llm(prompt)
         except Exception:
             logger.exception("生成计划整体分析失败: plan_id=%s", plan_id)
             analysis = (
@@ -306,45 +305,6 @@ class EvaluationService:
         # 所有文档都完成了审批，触发评估
         logger.info("自动触发收集项评估: plan_item_id=%s", plan_item_id)
         self.evaluate_plan_item(db, plan_item_id)
-
-    # ------------------------------------------------------------------
-    #  内部辅助
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _call_llm(prompt: str) -> str:
-        """调用 LLM API 生成文本（根据 PROVIDER 环境变量自动适配模型供应商）。
-
-        Args:
-            prompt: 用户提示。
-
-        Returns:
-            模型返回的文本内容。
-
-        Raises:
-            RuntimeError: API 调用失败。
-        """
-        url = f"{settings.deepseek_base_url.rstrip('/')}/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {settings.deepseek_api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": settings.deepseek_model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3,
-            "max_tokens": 2000,
-        }
-
-        resp = requests.post(url, headers=headers, json=payload, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-
-        choices = data.get("choices", [])
-        if not choices:
-            raise RuntimeError("LLM API 未返回有效响应")
-
-        return choices[0]["message"]["content"].strip()
 
 
 # 模块级单例

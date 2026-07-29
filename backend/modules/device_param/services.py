@@ -8,7 +8,15 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
 import psycopg2
+
+from core.pg_env import pg_params
 from psycopg2.extras import RealDictCursor
+
+try:
+    import pymysql
+    HAS_PYMYSQL = True
+except ImportError:
+    HAS_PYMYSQL = False
 
 
 class TimescaleDB:
@@ -19,35 +27,49 @@ class TimescaleDB:
 
     def __init__(self):
         self.conn = None
+        self.mysql_conn = None
 
     def connect(self) -> bool:
         """建立数据库连接
 
-        keepalives：长查询/慢链路下防止(企业代理)空闲超时断连，prod 直连也无害。
-        POSTGRES_SSLMODE：本地经 cntlm 隧道访问时设为 'disable'(SSL 会被代理 DPI 干扰)；
-        不设则用驱动默认，prod 行为不变。connect_timeout 可由 env 调大(慢隧道用)。
+        连接参数统一由 core.pg_env.pg_params() 提供（keepalives/sslmode/超时都在那里），
+        避免各模块各写一套默认值、漏配时连到不同的库。
         """
         try:
-            kwargs = dict(
-                host=os.getenv("PG_HOST", "10.1.2.227"),
-                port=os.getenv("PG_PORT", "5432"),
-                dbname=os.getenv("PG_DB", "knowledge_base"),
-                user=os.getenv("PG_USER", "postgres"),
-                password=os.getenv("PG_PASSWORD", "Focus&2025!"),
-                connect_timeout=int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "10")),
-                keepalives=1, keepalives_idle=30,
-                keepalives_interval=10, keepalives_count=5,
-            )
-            sslmode = os.getenv("POSTGRES_SSLMODE")
-            if sslmode:
-                kwargs["sslmode"] = sslmode
-            self.conn = psycopg2.connect(**kwargs)
+            self.conn = psycopg2.connect(**pg_params())
             with self.conn.cursor() as cur:
                 cur.execute("SET statement_timeout = '60s'")
+            self.connect_mysql()  # 尝试同时连接 MySQL（运行状态/告警表）
             return True
         except Exception as e:
             print(f"[TimescaleDB] 连接失败: {e}")
             self.conn = None
+            return False
+
+    def connect_mysql(self) -> bool:
+        """连接 MySQL 业务数据库（运行状态/告警等字典和记录表）。
+        连接信息从 AQA_MYSQL_* 环境变量读取，不可用时跳过不影响主流程。
+        """
+        if not HAS_PYMYSQL:
+            print("[TimescaleDB] pymysql 未安装，MySQL 连接跳过")
+            return False
+        try:
+            host = os.getenv("AQA_MYSQL_HOST") or os.getenv("SRC_MYSQL_HOST")
+            if not host:
+                return False
+            self.mysql_conn = pymysql.connect(
+                host=host,
+                port=int(os.getenv("AQA_MYSQL_PORT") or os.getenv("SRC_MYSQL_PORT", "3306")),
+                user=os.getenv("AQA_MYSQL_USER") or os.getenv("SRC_MYSQL_USER", "CHANGE_MEonly_user"),
+                password=os.getenv("AQA_MYSQL_PASSWORD") or os.getenv("SRC_MYSQL_PASSWORD", "CHANGE_ME@2026"),
+                database=os.getenv("AQA_MYSQL_DATABASE") or os.getenv("SRC_MYSQL_DB", "btr"),
+                charset="utf8mb4",
+                connect_timeout=10,
+            )
+            return True
+        except Exception as e:
+            print(f"[TimescaleDB] MySQL 连接失败: {e}")
+            self.mysql_conn = None
             return False
 
     def close(self):
@@ -55,6 +77,9 @@ class TimescaleDB:
         if self.conn:
             self.conn.close()
             self.conn = None
+        if self.mysql_conn:
+            self.mysql_conn.close()
+            self.mysql_conn = None
 
     def get_devices(self) -> List[Dict[str, Any]]:
         """获取设备列表
@@ -69,6 +94,7 @@ class TimescaleDB:
             return []
 
         with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute("SET statement_timeout = '5s'")
             cursor.execute("""
                 SELECT di.id, di.device_id AS device_code, di.device_name,
                        CASE
@@ -78,30 +104,25 @@ class TimescaleDB:
                            ELSE '其他'
                        END AS device_type
                 FROM device_info di
-                WHERE EXISTS (
-                    SELECT 1 FROM device_alarm_info a WHERE a.device_id = di.device_id
-                    UNION ALL
-                    SELECT 1 FROM device_energy_info e WHERE e.device_id = di.device_id
-                    UNION ALL
-                    SELECT 1 FROM device_energy_meter m WHERE m.production_device_id = di.device_id
-                )
-                AND (
-                    di.device_id LIKE 'BTR-QSDLQM%' OR
-                    di.device_id LIKE 'BTR-QSDLHG%' OR
-                    di.device_id LIKE 'BTR-QSDLGH%'
-                )
+                WHERE di.device_id LIKE 'BTR-QSDLQM%'
+                   OR di.device_id LIKE 'BTR-QSDLHG%'
+                   OR di.device_id LIKE 'BTR-QSDLGH%'
                 ORDER BY device_type, di.id
             """)
             devices = [dict(row) for row in cursor.fetchall()]
 
-        # 球磨机、固化室每种类型只保留前两个设备，合膏机保留前三个
+        # 每种类型保留 3 台（球磨机、固化室、合膏机各最多 3 台）
+        PREFERRED_BALL_MILL_CODES = ('BTR-QSDLQM-02-025', 'BTR-QSDLQM-02-031')
+
         type_count = {}
         filtered_devices = []
         for dev in devices:
             dev_type = dev['device_type']
+            if dev_type == '球磨机' and dev['device_code'] not in PREFERRED_BALL_MILL_CODES:
+                continue
             if dev_type not in type_count:
                 type_count[dev_type] = 0
-            max_count = 2  # 每种类型最多 2 台
+            max_count = 3  # 每种类型最多 3 台
             if type_count[dev_type] < max_count:
                 filtered_devices.append(dev)
                 type_count[dev_type] += 1
@@ -618,13 +639,17 @@ class TimescaleDB:
             return row[0] if row else None
 
     def get_running_status_code(self) -> Optional[int]:
-        """获取'运行'状态对应的状态码"""
-        if not self.conn:
+        """获取'运行'状态对应的状态码（从 MySQL dev_device_status 表）"""
+        if not self.mysql_conn:
             return None
-        with self.conn.cursor() as cursor:
-            cursor.execute("SELECT code FROM dev_device_status WHERE status = '运行' LIMIT 1")
-            row = cursor.fetchone()
-            return row[0] if row else None
+        try:
+            with self.mysql_conn.cursor() as cursor:
+                cursor.execute("SELECT code FROM dev_device_status WHERE status = '运行' LIMIT 1")
+                row = cursor.fetchone()
+                return row[0] if row else None
+        except Exception as e:
+            print(f"[TimescaleDB] 查询运行状态码失败: {e}")
+            return None
 
     def get_running_periods(
         self,
@@ -633,22 +658,25 @@ class TimescaleDB:
         start_time: datetime,
         end_time: datetime,
     ) -> List[Dict[str, Any]]:
-        """获取设备在指定时间范围内的运行时段"""
-        if not self.conn:
+        """获取设备在指定时间范围内的运行时段（从 MySQL dev_device_status_record 表）"""
+        if not self.mysql_conn:
             return []
 
-        query = """
-            SELECT start_time, end_time, duration
-            FROM dev_device_status_record
-            WHERE device_id = %s
-              AND status = %s
-              AND start_time < %s
-              AND (end_time IS NULL OR end_time > %s)
-            ORDER BY start_time ASC
-        """
-        with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(query, (device_id, status_code, end_time, start_time))
-            rows = [dict(row) for row in cursor.fetchall()]
+        try:
+            with self.mysql_conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("""
+                    SELECT start_time, end_time, duration
+                    FROM dev_device_status_record
+                    WHERE device_id = %s
+                      AND status = %s
+                      AND start_time < %s
+                      AND (end_time IS NULL OR end_time > %s)
+                    ORDER BY start_time ASC
+                """, (device_id, status_code, end_time, start_time))
+                rows = cursor.fetchall()
+        except Exception as e:
+            print(f"[TimescaleDB] 查询运行时段失败: {e}")
+            return []
 
         for row in rows:
             if isinstance(row.get("start_time"), datetime):
@@ -663,28 +691,27 @@ class TimescaleDB:
         start_time: datetime,
         end_time: datetime,
     ) -> List[Dict[str, Any]]:
-        """
-        获取设备在指定时间范围内的所有状态/告警事件
-
-        返回: [{status, status_name, start_time, end_time, duration, ...}]
-        """
-        if not self.conn:
+        """获取设备在指定时间范围内的所有状态/告警事件（从 MySQL dev_device_status_record 表）"""
+        if not self.mysql_conn:
             return []
 
-        query = """
-            SELECT r.status, s.name AS status_name,
-                   r.start_time, r.end_time, r.duration,
-                   r.qualified_count, r.unqualified_count
-            FROM dev_device_status_record r
-            LEFT JOIN dev_device_status s ON s.code = r.status
-            WHERE r.device_id = %s
-              AND r.start_time < %s
-              AND (r.end_time IS NULL OR r.end_time > %s)
-            ORDER BY r.start_time ASC
-        """
-        with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(query, (device_id, end_time, start_time))
-            rows = [dict(row) for row in cursor.fetchall()]
+        try:
+            with self.mysql_conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("""
+                    SELECT r.status, s.name AS status_name,
+                           r.start_time, r.end_time, r.duration,
+                           r.qualified_count, r.unqualified_count
+                    FROM dev_device_status_record r
+                    LEFT JOIN dev_device_status s ON s.code = r.status
+                    WHERE r.device_id = %s
+                      AND r.start_time < %s
+                      AND (r.end_time IS NULL OR r.end_time > %s)
+                    ORDER BY r.start_time ASC
+                """, (device_id, end_time, start_time))
+                rows = cursor.fetchall()
+        except Exception as e:
+            print(f"[TimescaleDB] 查询告警事件失败: {e}")
+            return []
 
         for row in rows:
             for key in ("start_time", "end_time"):

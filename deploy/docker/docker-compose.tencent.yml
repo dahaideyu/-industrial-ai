@@ -1,0 +1,87 @@
+# 腾讯云 CVM 部署覆盖配置 —— 目标：容器更新/删除/重建都不丢配置和数据
+#
+# 用法（在服务器 /opt/industrial-ai/deploy/docker 下）：
+#   docker compose -f docker-compose.yml -f docker-compose.tencent.yml --profile local-db up -d
+#
+# ── 核心思路 ──────────────────────────────────────────────────────────────
+# 1) 配置文件搬出代码目录：所有服务的 env_file 指向 ${APP_DATA_ROOT}/config/.env
+#    （绝对路径）。以后重传代码、覆盖 deploy/docker/、git pull 都碰不到它。
+# 2) 数据库/MinIO 用 external: true 的命名卷 —— `docker compose down -v` 只删
+#    compose 自己声明的卷，external 卷会被跳过，删不掉，这是防误删的关键。
+# 3) 应用数据/日志改成绑定挂载到数据盘 —— 绑定挂载是宿主机目录，
+#    `down -v` / `docker volume prune` 都不会动它。
+#
+# ── 服务器上的一次性准备 ──────────────────────────────────────────────────
+#   # a. 挂载独立云硬盘到 /data（实例重装/重建时数据盘可保留并重新挂载）
+#   #    lsblk 找到数据盘（如 /dev/vdb），首次使用需格式化：
+#   #    sudo mkfs.ext4 /dev/vdb && sudo mkdir -p /data && sudo mount /dev/vdb /data
+#   #    写入 /etc/fstab 保证开机自动挂载（用 UUID，别用 /dev/vdb）：
+#   #    echo "UUID=$(sudo blkid -s UUID -o value /dev/vdb) /data ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+#
+#   # b. 把 Docker 数据目录也放到数据盘（镜像+命名卷都落在 /data，系统盘不会被撑爆）
+#   #    sudo systemctl stop docker
+#   #    sudo mkdir -p /data/docker
+#   #    echo '{"data-root": "/data/docker"}' | sudo tee /etc/docker/daemon.json
+#   #    sudo rsync -aP /var/lib/docker/ /data/docker/    # 已有数据才需要搬
+#   #    sudo systemctl start docker
+#
+#   # c. 建目录 + 外部卷（外部卷必须先手动创建，compose 不会自动建）
+#   #    sudo mkdir -p /data/industrial-ai/{config,appdata,logs,dead_letter,backup}
+#   #    sudo chown -R $USER:$USER /data/industrial-ai
+#   #    docker volume create industrial_pgdata
+#   #    docker volume create industrial_minio
+#
+#   # d. 放配置（这份才是权威配置，仓库里的 .env.prod 只当模板参考）
+#   #    cp deploy/docker/.env.example /data/industrial-ai/config/.env
+#   #    vi /data/industrial-ai/config/.env      # 填数据库口令/API key 等
+#   #    chmod 600 /data/industrial-ai/config/.env
+#
+# APP_DATA_ROOT 可用环境变量覆盖：APP_DATA_ROOT=/mnt/data docker compose ... up -d
+
+services:
+  industrial-ai:
+    container_name: industrial-ai
+    env_file:
+      - ${APP_DATA_ROOT:-/data/industrial-ai}/config/.env
+    ports:
+      - "${APP_PORT:-9300}:80"
+    volumes:
+      - ${APP_DATA_ROOT:-/data/industrial-ai}/logs:/app/logs
+      - ${APP_DATA_ROOT:-/data/industrial-ai}/appdata:/app/data
+
+  knb-celery-worker:
+    env_file:
+      - ${APP_DATA_ROOT:-/data/industrial-ai}/config/.env
+    volumes:
+      - ${APP_DATA_ROOT:-/data/industrial-ai}/appdata:/app/data
+
+  repair-suggestion:
+    env_file:
+      - ${APP_DATA_ROOT:-/data/industrial-ai}/config/.env
+
+  mqtt-etl:
+    env_file:
+      - ${APP_DATA_ROOT:-/data/industrial-ai}/config/.env
+    volumes:
+      - ${APP_DATA_ROOT:-/data/industrial-ai}/appdata:/app/data
+      - ${APP_DATA_ROOT:-/data/industrial-ai}/dead_letter:/app/mqtt_etl/dead_letter
+
+  # 数据库：换成外部卷。用外部卷而不是绑定挂载，是为了绕开 timescaledb 镜像
+  # (Alpine, postgres uid 70) 对宿主机目录属主的要求 —— 绑定挂载常见
+  # "data directory has wrong ownership" 起不来，外部卷由 Docker 管属主，省事且同样删不掉。
+  postgresql:
+    volumes:
+      - industrial_pgdata:/var/lib/postgresql/data
+      - ./init-sql:/docker-entrypoint-initdb.d:ro
+
+  minio:
+    volumes:
+      - industrial_minio:/data
+
+volumes:
+  # external: true —— compose 只管用、不管建也不管删。
+  # `docker compose down -v` 会跳过它们，这是"删容器不丢数据"的核心保障。
+  industrial_pgdata:
+    external: true
+  industrial_minio:
+    external: true

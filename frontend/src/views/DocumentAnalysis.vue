@@ -25,7 +25,14 @@
       <main class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 class="font-headline text-lg font-semibold text-slate-950">分析结果</h2>
         <div class="mt-4 min-h-[520px] rounded-md bg-slate-50 p-4">
-          <div v-if="!result && !error" class="grid h-[480px] place-items-center text-center text-slate-500">
+          <div v-if="loading" class="grid h-[480px] place-items-center text-center text-slate-500">
+            <div>
+              <div class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-amber-600"></div>
+              <p class="font-semibold text-slate-700">AI 正在分析文档，请稍候...</p>
+              <p class="mt-1 text-sm">内容较长或模型较慢时可能需要十几秒到几十秒。</p>
+            </div>
+          </div>
+          <div v-else-if="!result && !error" class="grid h-[480px] place-items-center text-center text-slate-500">
             <div>
               <div class="mx-auto mb-4 h-12 w-12 rounded-md bg-slate-950"></div>
               <p class="font-semibold text-slate-700">等待文档输入</p>
@@ -60,7 +67,9 @@ async function run() {
     if (res.code === 200) result.value = res.data
     else error.value = res.msg || '分析失败'
   } catch (err) {
-    error.value = err.message
+    error.value = err.response
+      ? (err.response.data?.msg || err.response.data?.detail || err.message)
+      : '连不上后端服务，请检查后端是否正常运行。'
   } finally {
     loading.value = false
   }

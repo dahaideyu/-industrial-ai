@@ -2,21 +2,21 @@
 # Docker 容器入口
 set -e
 
-echo "=== Chaowei Agent Starting ==="
+echo "=== Industrial AI Starting ==="
 echo "ENABLE_SQL_QA: ${ENABLE_SQL_QA:-true}"
 echo "ENABLE_REPORT_SCHEDULER: ${ENABLE_REPORT_SCHEDULER:-false}"
 echo "PROVIDER: ${PROVIDER:-deepseek}"
 
 # ---- 等待依赖服务就绪 ----
-# 变量取值：新名 PG_* 优先，旧名 KNB_PG_* 兜底（v2026-07 命名迁移，与 compose/env 约定一致）
+# 连库变量统一用 PG_*（旧名 KNB_PG_* 已废弃，见 backend/core/pg_env.py）
 if [ "${ENABLE_KNOWLEDGE_BASE:-false}" = "true" ]; then
-  WAIT_PG_HOST="${PG_HOST:-${KNB_PG_HOST:-}}"
-  WAIT_PG_PORT="${PG_PORT:-${KNB_PG_PORT:-5432}}"
-  WAIT_PG_USER="${PG_USER:-${KNB_PG_USER:-zxzz}}"
-  WAIT_PG_DB="${PG_DB:-${KNB_PG_DB:-knowledge_base}}"
-  WAIT_PG_PASSWORD="${PG_PASSWORD:-${KNB_PG_PASSWORD:-}}"
+  WAIT_PG_HOST="${PG_HOST:-}"
+  WAIT_PG_PORT="${PG_PORT:-5432}"
+  WAIT_PG_USER="${PG_USER:-zxzz}"
+  WAIT_PG_DB="${PG_DB:-knowledge_base}"
+  WAIT_PG_PASSWORD="${PG_PASSWORD:-}"
   if [ -z "$WAIT_PG_HOST" ]; then
-    echo "[0/3] PG_HOST/KNB_PG_HOST not set, skip waiting for PostgreSQL"
+    echo "[0/3] PG_HOST not set, skip waiting for PostgreSQL"
   else
     echo "[0/3] Waiting for PostgreSQL (${WAIT_PG_HOST}:${WAIT_PG_PORT})..."
     for i in $(seq 1 30); do

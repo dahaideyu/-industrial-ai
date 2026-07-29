@@ -13,14 +13,58 @@ profile 缺失/未确认时，调用方一律回退现有关键词/硬编码逻�
 
 import json
 import math
+import os
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import yaml
 from psycopg2.extras import RealDictCursor, execute_values
 
 from . import stats_store
 from . import trend_drift as td
+
+# ═══════════════════════════════════════════════════════
+# CPK 重算(中位数过滤+CPK=1.33)默认参数：走配置文件，不硬编码
+# ═══════════════════════════════════════════════════════
+
+_CPK_RECALC_CONFIG_DEFAULTS = {
+    "median_filter_low_pct": 0.15,
+    "median_filter_high_pct": 0.15,
+    "cpk_target": 1.33,
+}
+_CPK_RECALC_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "config", "cpk_recalc_config.yaml")
+
+
+def get_cpk_recalc_config() -> Dict[str, float]:
+    """读 config/cpk_recalc_config.yaml 里的中位数过滤上下限比例 + CPK目标值。
+
+    文件不存在或缺字段时，用默认值(15%/15%/1.33)补全并写回文件，保证配置文件
+    始终是"当前生效值"的唯一真实来源，不是散落在各处函数签名里的字面量。
+    """
+    config = dict(_CPK_RECALC_CONFIG_DEFAULTS)
+    existing = None
+    if os.path.exists(_CPK_RECALC_CONFIG_PATH):
+        try:
+            with open(_CPK_RECALC_CONFIG_PATH, "r", encoding="utf-8") as f:
+                existing = yaml.safe_load(f)
+        except Exception as e:
+            print(f"[param_profile] 读取 cpk_recalc_config.yaml 失败，用默认值: {e}")
+
+    if isinstance(existing, dict):
+        config.update({k: existing[k] for k in _CPK_RECALC_CONFIG_DEFAULTS if k in existing})
+
+    if existing != config:
+        try:
+            os.makedirs(os.path.dirname(_CPK_RECALC_CONFIG_PATH), exist_ok=True)
+            with open(_CPK_RECALC_CONFIG_PATH, "w", encoding="utf-8") as f:
+                yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
+        except Exception as e:
+            print(f"[param_profile] 初始化 cpk_recalc_config.yaml 失败(不影响本次使用默认值): {e}")
+
+    return config
 
 # 语义类别的中文名关键词（便宜的默认，LLM/人会细化）
 _CATEGORY_KEYWORDS = [
@@ -431,18 +475,30 @@ def compute_cpk(mean: float, std: float, spec_low: Optional[float],
 
 
 def recalc_spec_limits(conn, device_code: str, p_name: str,
-                       cpk_target: float = 1.33,
-                       median_filter_pct: float = 0.15) -> Dict[str, Any]:
+                       cpk_target: Optional[float] = None,
+                       median_filter_low_pct: Optional[float] = None,
+                       median_filter_high_pct: Optional[float] = None) -> Dict[str, Any]:
     """基于原始数据重算规格上下限（CPK=1.33 算法）。
 
     1. 拉取该参数最近 14 天原始数据（上限 10 万条）
     2. 取中位数 M
-    3. 保留 [M*(1-pct), M*(1+pct)] 内的值（过滤离群）
+    3. 保留 [M*(1-low_pct), M*(1+high_pct)] 内的值（过滤离群，下限和上限可独立调节）
     4. 在过滤后的集合上计算 μ 和 σ
     5. USL = μ + cpk_target * 3σ, LSL = μ - cpk_target * 3σ
+
+    三个参数不传时，从 config/cpk_recalc_config.yaml 读默认值（不再是函数签名里的字面量）；
+    调用方（如前端"重算"弹窗手动调整过）显式传值时，仍然可以单次覆盖，不影响配置文件。
     """
     from psycopg2.extras import RealDictCursor
     import statistics
+
+    cfg = get_cpk_recalc_config()
+    if cpk_target is None:
+        cpk_target = cfg["cpk_target"]
+    if median_filter_low_pct is None:
+        median_filter_low_pct = cfg["median_filter_low_pct"]
+    if median_filter_high_pct is None:
+        median_filter_high_pct = cfg["median_filter_high_pct"]
 
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -466,15 +522,15 @@ def recalc_spec_limits(conn, device_code: str, p_name: str,
 
     total_count = len(values)
 
-    # 中位数过滤
+    # 中位数过滤（下限和上限独立调节）
     median = statistics.median(values)
-    lo = median * (1 - median_filter_pct)
-    hi = median * (1 + median_filter_pct)
+    lo = median * (1 - median_filter_low_pct)
+    hi = median * (1 + median_filter_high_pct)
     filtered = [v for v in values if lo <= v <= hi]
     filtered_count = len(filtered)
 
     if filtered_count < 5:
-        return {"error": f"中位数 ±{median_filter_pct*100:.0f}% 过滤后数据不足（仅 {filtered_count} 条）"}
+        return {"error": f"中位数下限-{median_filter_low_pct*100:.0f}% 上限+{median_filter_high_pct*100:.0f}% 过滤后数据不足（仅 {filtered_count} 条）"}
 
     mu = statistics.mean(filtered)
     sigma = statistics.stdev(filtered) if len(filtered) >= 2 else 0.0

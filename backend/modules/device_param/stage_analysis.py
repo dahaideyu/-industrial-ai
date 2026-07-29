@@ -281,13 +281,18 @@ def analyze_stages(
     end: datetime,
     focus_stage: Optional[int] = None,
     focus_state: Optional[str] = None,
+    stage_param_override: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """主入口：返回阶段配方表 + 概览(+ 锁定阶段的跨批次表)。db 为已连接的 TimescaleDB。"""
+    """主入口：返回阶段配方表 + 概览(+ 锁定阶段的跨批次表)。db 为已连接的 TimescaleDB。
+
+    stage_param_override：跳过 detect_stage_param() 自动探测，直接用调用方指定的阶段参数
+    （如 Step②脉搏发现里用户已确认的 pulse_param）。不传时行为不变。
+    """
     conn = db.conn
     name_map = db.get_point_names(device_code)   # p_name -> 中文名
     unit_map = db.get_point_units(device_code)   # p_name -> 单位
 
-    stage_param = detect_stage_param(name_map, conn=conn, device_code=device_code)
+    stage_param = stage_param_override or detect_stage_param(name_map, conn=conn, device_code=device_code)
     if not stage_param:
         return {"error": "no_stage_param",
                 "msg": "该设备没有可识别的'阶段'参数(中文名含'阶段')，无法按阶段分析。"}
@@ -316,8 +321,9 @@ def analyze_stages(
     mean_by = (per_seg.groupby(["stage", "p_name"])["mean"].mean())
     delta_by = (per_seg.groupby(["stage", "p_name"])["delta"].mean())
 
-    # 每阶段时长(跨批次中位)、段数
+    # 每阶段时长(跨批次中位/标准差，标准差供 Step⑥ 阶段时长 CPK 用)、段数
     dur_med = seg.groupby("stage")["dur_min"].median()
+    dur_std = seg.groupby("stage")["dur_min"].std()
     seg_cnt = seg.groupby("stage")["seg_id"].count()
 
     # 出现的参数集合(只保留有数值的)
@@ -340,6 +346,8 @@ def analyze_stages(
     for st in sorted(seg["stage"].unique().tolist()):
         d = round(float(dur_med.get(st, 0.0)), 2)
         cum = round(cum + d, 2)
+        d_std_raw = dur_std.get(st)
+        d_std = round(float(d_std_raw), 2) if d_std_raw is not None and not pd.isna(d_std_raw) else None
         means = {p: round(float(mean_by.get((st, p))), 3)
                  for p in present if (st, p) in mean_by.index}
         deltas = {p: round(float(delta_by.get((st, p))), 3)
@@ -353,6 +361,7 @@ def analyze_stages(
             "state": display_state,
             "phase_guess": phase,
             "dur_min": d,
+            "dur_std": d_std,
             "cum_min": cum,
             "seg_count": int(seg_cnt.get(st, 0)),
             "means": means,

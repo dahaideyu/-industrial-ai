@@ -18,6 +18,7 @@ from backend.services.agentic_qa.db.mysql import db
 from backend.core.agentic_qa.llm import llm
 from backend.core.agentic_qa.config import settings
 from backend.core.agentic_qa.logger import get_logger
+from backend.services.agentic_qa.models.entity_config import validate_identifier, validate_filter_condition
 
 logger = get_logger("agents.entity_resolver")
 
@@ -107,11 +108,25 @@ def index_entities(force: bool = False) -> int:
         label_col = cfg["label_column"]
         value_col = cfg["value_column"]
         context_cols = cfg.get("context_columns", [])
+        filter_cond = cfg.get("filter_condition", "del_flag = 0")
+
+        try:
+            # 表名/列名/filter_condition 来自实体配置（管理接口可写），拼进 SQL 前
+            # 兜底校验一遍，防止配置里混进分号/注释符等注入手法（写入时 admin.py
+            # 已经校验过，这里是防止绕过写入路径直接改库的第二道保险）
+            validate_identifier(table, "table")
+            validate_identifier(label_col, "label_column")
+            validate_identifier(value_col, "value_column")
+            for c in context_cols:
+                validate_identifier(c, "context_columns")
+            validate_filter_condition(filter_cond)
+        except ValueError as e:
+            logger.warning(f"[entity] 实体配置校验失败，跳过索引 {table}: {e}")
+            continue
 
         try:
             cols = ", ".join([f"`{label_col}`", f"`{value_col}`"] +
                              [f"`{c}`" for c in context_cols if c != label_col])
-            filter_cond = cfg.get("filter_condition", "del_flag = 0")
             rows = db.execute_query(f"SELECT {cols} FROM `{table}` WHERE {filter_cond} LIMIT 5000")
         except Exception as e:
             logger.debug(f"[entity] skip index {table}: {e}")
@@ -228,6 +243,15 @@ def search_entity_like(
     label_col = cfg.get("label_column", "name")
     value_col = cfg.get("value_column", "id")
     context_cols = cfg.get("context_columns", [])
+
+    # 表名/列名来自实体配置（管理接口可写），拼进 SQL 前兜底校验（同 index_entities）
+    try:
+        validate_identifier(table, "table")
+        for c in search_cols:
+            validate_identifier(c, "search_columns")
+    except ValueError as e:
+        logger.warning(f"[entity] 实体配置校验失败，跳过 LIKE 检索 {table}: {e}")
+        return []
 
     results = []
     try:

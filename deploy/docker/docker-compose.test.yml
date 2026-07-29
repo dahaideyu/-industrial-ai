@@ -17,6 +17,11 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
 
   redis:
     deploy:
@@ -26,13 +31,6 @@ services:
           memory: 256M
 
   minio:
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-
-  knb-libreoffice:
     deploy:
       resources:
         limits:

@@ -12,7 +12,9 @@ const routes = [
   { path: '/maintenance-reports', component: () => import('../views/MaintenanceReports.vue') },
   { path: '/document-analysis', component: () => import('../views/DocumentAnalysis.vue') },
   { path: '/repair-suggestion', component: () => import('../views/RepairSuggestion.vue') },
+  { path: '/param-setup', component: () => import('../views/ParamSetup.vue') },
   { path: '/device-params', component: () => import('../views/DeviceParams.vue') },
+  { path: '/param-intelligence', component: () => import('../views/ParamIntelligence.vue') },
   // 系统管理 · 统一 Job 管理
   { path: '/system/jobs', component: () => import('../views/SystemJobs.vue') },
   // SQL-QA 智能问答平台
@@ -68,7 +70,9 @@ router.afterEach((to) => {
     '/maintenance-reports': '维护报告 - Industrial Intelligence',
     '/document-analysis': '文档分析 - Industrial Intelligence',
     '/repair-suggestion': '维修建议 - Industrial Intelligence',
+    '/param-setup': '参数设定 - Industrial Intelligence',
     '/device-params': '设备参数 - Industrial Intelligence',
+    '/param-intelligence': '参数智能 - Industrial Intelligence',
     '/system/jobs': '任务管理 - Industrial Intelligence',
     '/sql-qa': '智能问答 - Industrial Intelligence',
     '/knowledge-management': '知识库管理 - Industrial Intelligence',

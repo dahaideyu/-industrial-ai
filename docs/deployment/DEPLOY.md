@@ -142,7 +142,7 @@ git pull
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `PROVIDER` | 模型供应商 | `deepseek` / `local_qwen3` / `openai` |
-| `POSTGRES_HOST` | 数据库地址 | `10.1.2.227` |
+| `POSTGRES_HOST` | 数据库地址 | `CHANGE_ME` |
 | `RAGFLOW_BASE_URL` | 知识库地址 | `http://192.168.59.18:9380` |
 | `UPSTREAM_BASE_URL` | 上游系统地址 | `http://192.168.59.11:18081` |
 | `SCHEDULER_ENABLED` | 定时任务开关 | `true` / `false` |

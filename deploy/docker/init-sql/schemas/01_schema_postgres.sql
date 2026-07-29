@@ -1,4 +1,4 @@
--- Schema-only dump of database `postgres` (from remote 10.1.2.227, via psycopg2 introspection — pg_dump not available on this machine).
+-- Schema-only dump of database `postgres` (from remote CHANGE_ME, via psycopg2 introspection — pg_dump not available on this machine).
 -- 幂等：全部 IF NOT EXISTS，可重复执行。
 
 CREATE EXTENSION IF NOT EXISTS "timescaledb";
@@ -402,6 +402,26 @@ SELECT create_hypertable('device_energy_info', 'point_time', chunk_time_interval
 SELECT add_dimension('device_energy_info', 'device_id', number_partitions => 8, if_not_exists => TRUE);
 
 -- ============================================================
+-- 压缩策略：14天前的冷 chunk 自动列式压缩（raw_json 全量上报体尤其吃压缩）
+-- compress_after 定 14 天而非 chunk 大小(7天)本身，是为了给前端最长 7 天的 raw
+-- 现算查询留出安全边际，见 migrations/004_add_compression_policy.sql 注释
+-- ============================================================
+
+ALTER TABLE device_alarm_info SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'device_id, point_id',
+    timescaledb.compress_orderby = 'point_time DESC'
+);
+SELECT add_compression_policy('device_alarm_info', INTERVAL '14 days', if_not_exists => TRUE);
+
+ALTER TABLE device_energy_info SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'device_id, point_id',
+    timescaledb.compress_orderby = 'point_time DESC'
+);
+SELECT add_compression_policy('device_energy_info', INTERVAL '14 days', if_not_exists => TRUE);
+
+-- ============================================================
 -- 连续聚合（小时级预计算）：>3h 聚合查询直接读视图，不扫原始表
 -- ============================================================
 
@@ -446,3 +466,69 @@ SELECT add_continuous_aggregate_policy('device_energy_hourly',
     end_offset => INTERVAL '1 hour',
     schedule_interval => INTERVAL '1 hour',
     if_not_exists => TRUE);
+
+-- ============================================================
+-- 连续聚合（5分钟级预计算）：支撑特征视图滑动均值/标准差/变化率的代数重建
+-- 列结构复刻上面的 hourly CAGG，多存一列 sum_sq 备用；WITH NO DATA 不做全历史
+-- 回填，见 migrations/005_device_5min_cagg.sql 注释
+-- ============================================================
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS device_alarm_5min
+WITH (timescaledb.continuous) AS
+SELECT
+    device_id,
+    point_id,
+    time_bucket('5 minutes', point_time) AS bucket,
+    AVG(COALESCE(point_value_full, point_value::numeric)) AS avg_val,
+    MIN(COALESCE(point_value_full, point_value::numeric)) AS min_val,
+    MAX(COALESCE(point_value_full, point_value::numeric)) AS max_val,
+    SUM(COALESCE(point_value_full, point_value::numeric)) AS sum_val,
+    SUM(POWER(COALESCE(point_value_full, point_value::numeric), 2)) AS sum_sq,
+    COUNT(*) AS cnt
+FROM device_alarm_info
+WHERE point_value_full IS NOT NULL OR point_value IS NOT NULL
+GROUP BY device_id, point_id, bucket
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS device_energy_5min
+WITH (timescaledb.continuous) AS
+SELECT
+    device_id,
+    point_id,
+    time_bucket('5 minutes', point_time) AS bucket,
+    AVG(point_value) AS avg_val,
+    MIN(point_value) AS min_val,
+    MAX(point_value) AS max_val,
+    SUM(point_value) AS sum_val,
+    SUM(POWER(point_value, 2)) AS sum_sq,
+    COUNT(*) AS cnt
+FROM device_energy_info
+WHERE point_value IS NOT NULL
+GROUP BY device_id, point_id, bucket
+WITH NO DATA;
+
+-- 只显式物化最近30天（够特征视图7天用 + 留验证余量），不动更早历史
+-- point_time 是 timestamp without time zone，now() 是 timestamptz，
+-- refresh_continuous_aggregate 要求窗口参数类型跟 bucket 列一致，需显式转换，
+-- 否则报 "invalid time argument type" 并中断整个初始化脚本（后续 02/03/04 schema、migrations 都不会执行）
+CALL refresh_continuous_aggregate('device_alarm_5min', now()::timestamp - INTERVAL '30 days', now()::timestamp);
+CALL refresh_continuous_aggregate('device_energy_5min', now()::timestamp - INTERVAL '30 days', now()::timestamp);
+
+-- 近实时刷新：5分钟跑一次；end_offset 10min 缓冲迟到数据（实时聚合机制兜底最近数据）
+SELECT add_continuous_aggregate_policy('device_alarm_5min',
+    start_offset => INTERVAL '2 hours',
+    end_offset => INTERVAL '10 minutes',
+    schedule_interval => INTERVAL '5 minutes',
+    if_not_exists => TRUE);
+
+SELECT add_continuous_aggregate_policy('device_energy_5min',
+    start_offset => INTERVAL '2 hours',
+    end_offset => INTERVAL '10 minutes',
+    schedule_interval => INTERVAL '5 minutes',
+    if_not_exists => TRUE);
+
+-- 保留策略：衍生统计的保留策略，不是删原始数据——device_alarm_info /
+-- device_energy_info 原始表完全不受影响。14天与 Phase 1 的 compress_after
+-- 用同一套"7天查询窗口+安全余量"逻辑。
+SELECT add_retention_policy('device_alarm_5min', INTERVAL '14 days', if_not_exists => TRUE);
+SELECT add_retention_policy('device_energy_5min', INTERVAL '14 days', if_not_exists => TRUE);

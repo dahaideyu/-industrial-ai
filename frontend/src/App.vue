@@ -30,19 +30,25 @@
                 class="absolute top-full left-0 mt-1 w-48 bg-white rounded-md shadow-lg invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 border border-slate-200 z-50"
               >
                 <div class="py-1">
-                  <router-link
-                    v-for="item in group.items"
-                    :key="item.path"
-                    :to="item.path"
-                    :class="[
-                      'block px-4 py-2 text-sm font-medium transition-colors',
-                      ($route.path === item.path || $route.path.startsWith(item.path + '/'))
-                        ? 'bg-amber-100 text-amber-900'
-                        : 'text-slate-700 hover:bg-slate-100'
-                    ]"
-                  >
-                    {{ item.name }}
-                  </router-link>
+                  <template v-for="item in group.items" :key="item.path">
+                    <router-link
+                      v-if="!isFeatureDisabled(item)"
+                      :to="item.path"
+                      :class="[
+                        'block px-4 py-2 text-sm font-medium transition-colors',
+                        ($route.path === item.path || $route.path.startsWith(item.path + '/'))
+                          ? 'bg-amber-100 text-amber-900'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      ]"
+                    >
+                      {{ item.name }}
+                    </router-link>
+                    <div v-else
+                      class="block px-4 py-2 text-sm font-medium text-slate-300 cursor-not-allowed"
+                      title="该功能当前环境未启用（需管理员在部署配置里开启）">
+                      {{ item.name }} <span class="text-[10px]">未启用</span>
+                    </div>
+                  </template>
                 </div>
               </div>
             </div>
@@ -96,7 +102,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { logout as logoutApi } from './api/client'
+import client, { logout as logoutApi } from './api/client'
 import Toast from './components/ui/Toast.vue'
 import ConfirmModal from './components/ui/ConfirmModal.vue'
 import { setConfirmModalInstance } from './composables/useConfirm'
@@ -105,8 +111,25 @@ const route = useRoute()
 const router = useRouter()
 const confirmRef = ref(null)
 
+// 后端可选模块的开关状态：null=还没查到(此时不灰化，避免请求慢时闪一下"未启用")，
+// 查到之后 true/false 才决定要不要灰化对应导航项，避免用户点进一个后端根本没注册路由的死链接
+const featureFlags = ref({ sql_qa: null, knowledge_base: null, knowledge_qa: null })
+function isFeatureDisabled(item) {
+  if (!item.flag) return false
+  return featureFlags.value[item.flag] === false
+}
+async function loadFeatureFlags() {
+  try {
+    const res = await client.get('/features')
+    if (res.code === 200 && res.data) featureFlags.value = res.data
+  } catch {
+    // 查询本身失败时保持 null(不灰化)，避免因为这一个小接口抖动就把整块导航锁死
+  }
+}
+
 onMounted(() => {
   setConfirmModalInstance(confirmRef.value)
+  loadFeatureFlags()
 })
 
 const isPublicPage = computed(() => route.meta.public === true)
@@ -144,7 +167,9 @@ const navGroups = [
     name: '诊断与建议',
     items: [
       { path: '/analysis', name: '设备诊断' },
+      { path: '/param-setup', name: '参数设定' },
       { path: '/device-params', name: '参数分析' },
+      { path: '/param-intelligence', name: '参数智能' },
       { path: '/repair-suggestion', name: '维修建议' },
     ],
   },
@@ -159,9 +184,9 @@ const navGroups = [
   {
     name: 'AI 智能问答',
     items: [
-      { path: '/sql-qa', name: '问答平台' },
-      { path: '/knowledge-management', name: '知识库管理' },
-      { path: '/knowledge-qa', name: '知识库问答' },
+      { path: '/sql-qa', name: '问答平台', flag: 'sql_qa' },
+      { path: '/knowledge-management', name: '知识库管理', flag: 'knowledge_base' },
+      { path: '/knowledge-qa', name: '知识库问答', flag: 'knowledge_qa' },
     ],
   },
   {

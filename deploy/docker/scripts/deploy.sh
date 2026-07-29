@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ========================================
-# Chaowei Agent 部署脚本（简化版）
+# Industrial AI 部署脚本（简化版）
 #
 # 用法：./deploy.sh [环境] [操作] [分支]
 # 环境：test | prod | shandong | jiangxi | changxing（默认 changxing）
@@ -8,15 +8,15 @@
 # 分支：git 分支名（默认 dev）
 #
 # 首次部署：
-#   git clone <仓库地址> /opt/chaowei-agent
-#   cd /opt/chaowei-agent/deploy/docker
+#   git clone <仓库地址> /opt/industrial-ai
+#   cd /opt/industrial-ai/deploy/docker
 #   ./scripts/deploy.sh changxing update
 #
 # 指定分支部署：
 #   ./scripts/deploy.sh changxing update feature/ai-report
 #
 # 后续更新：
-#   cd /opt/chaowei-agent/deploy/docker
+#   cd /opt/industrial-ai/deploy/docker
 #   ./scripts/deploy.sh changxing update
 #
 # 重启服务：
@@ -58,7 +58,7 @@ cd "$PROJECT_ROOT"
 case "$ACTION" in
     update)
         echo -e "${GREEN}========================================${NC}"
-        echo -e "${GREEN}  Chaowei Agent 部署 - 环境: ${ENV}${NC}"
+        echo -e "${GREEN}  Industrial AI 部署 - 环境: ${ENV}${NC}"
         echo -e "${GREEN}========================================${NC}"
 
         # 拉取最新代码（只触发一次认证）

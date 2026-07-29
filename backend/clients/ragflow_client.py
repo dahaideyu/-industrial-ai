@@ -5,6 +5,7 @@ RAGFlow 客户端
 """
 import os
 import json
+import threading
 import requests
 
 
@@ -426,6 +427,7 @@ class RAGFlowClient:
 
 # 单例
 _ragflow_client = None
+_ragflow_client_lock = threading.Lock()
 
 
 def get_ragflow_client(
@@ -444,8 +446,10 @@ def get_ragflow_client(
     """
     global _ragflow_client
     if _ragflow_client is None:
-        _ragflow_client = RAGFlowClient(
-            conversation_id=conversation_id,
-            dataset_id=dataset_id
-        )
+        with _ragflow_client_lock:
+            if _ragflow_client is None:
+                _ragflow_client = RAGFlowClient(
+                    conversation_id=conversation_id,
+                    dataset_id=dataset_id
+                )
     return _ragflow_client

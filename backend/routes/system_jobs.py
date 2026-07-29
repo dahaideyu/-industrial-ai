@@ -7,6 +7,7 @@
 cron/enabled 存 system_job_config(UI 可改，改后即时重排)；每次运行经 system_job_store.run_and_record
 落 analysis_job_run(结果/异常入库)。运行历史见 GET /jobs/{id}/runs。
 """
+import logging
 import os
 import threading
 from datetime import datetime
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 
 from core.response import success_response, error_response
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/system", tags=["system-jobs"])
 
 
@@ -130,7 +132,7 @@ def _run_quality_batch(report_type: str):
         try:
             getattr(worker, f"run_quality_{report_type}_job")(workshop_id=wid)
         except Exception:
-            pass
+            logger.exception("质量%s报告生成失败: workshop_id=%s", report_type, wid)
     return result
 
 
@@ -176,7 +178,7 @@ def _run_device_efficiency_batch(period_type: str):
         try:
             worker.run_device_efficiency_job(workshop_id=wid, period_type=period_type)
         except Exception:
-            pass
+            logger.exception("设备效率%s报告生成失败: workshop_id=%s", period_type, wid)
     return result
 
 

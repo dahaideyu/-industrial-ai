@@ -2,7 +2,7 @@
 
 ## 需求概述
 
-把项目里分散的两套 PostgreSQL（业务时序外部主机 `10.1.2.227` + docker-compose 内的 KNB `postgres:15`）合并到 docker 内的单个 `timescale/timescaledb:2.19.1-pg14` 容器；同时把 `device_mqtt_etl`（systemd 跑）改为独立 docker 容器集成进 docker-compose。
+把项目里分散的两套 PostgreSQL（业务时序外部主机 `CHANGE_ME` + docker-compose 内的 KNB `postgres:15`）合并到 docker 内的单个 `timescale/timescaledb:2.19.1-pg14` 容器；同时把 `device_mqtt_etl`（systemd 跑）改为独立 docker 容器集成进 docker-compose。
 
 > 详细技术设计见：[`docs/superpowers/specs/2026-07-02-unified-timescaledb-design.md`](../superpowers/specs/2026-07-02-unified-timescaledb-design.md)
 
@@ -10,7 +10,7 @@
 
 | ✅ 在范围内 | ❌ 不在范围 |
 |---|---|
-| 业务时序 PG（10.1.2.227）→ 迁到 timescaledb 容器 | agentic_qa（保持 SQLite + MySQL + Chroma + Neo4j） |
+| 业务时序 PG（CHANGE_ME）→ 迁到 timescaledb 容器 | agentic_qa（保持 SQLite + MySQL + Chroma + Neo4j） |
 | KNB PG（docker-compose 内 `postgresql` 服务）→ 与业务时序合并 | RAGFlow、MinIO、Redis 等其他基础设施 |
 | `device_mqtt_etl` systemd → 改为 docker 容器 | 新增功能开发 |
 | 配置统一用 `POSTGRES_*`，删除 `PG_*` / `KNB_PG_*` | — |
@@ -61,7 +61,7 @@
 - [ ] 3.1 新增：`POSTGRES_DB=chaowei_business`
 - [ ] 3.2 新增：`MQTT_BROKER` / `MQTT_PORT` / `MQTT_TOPIC` / `MQTT_USER` / `MQTT_PASS` / `MQTT_QOS` / `MQTT_BATCH_SIZE` / `MQTT_BATCH_TIMEOUT`
 - [ ] 3.3 修改：`POSTGRES_HOST=timescaledb`
-- [ ] 3.4 修改：`POSTGRES_PASSWORD=<新强密码>`（原 `Focus&2025!`）
+- [ ] 3.4 修改：`POSTGRES_PASSWORD=<新强密码>`（原 `CHANGE_ME`）
 - [ ] 3.5 清空：`POSTGRES_FALLBACK_HOST`
 - [ ] 3.6 删除：`PG_*` 系列
 - [ ] 3.7 删除：`KNB_PG_*` 系列
@@ -89,7 +89,7 @@
 
 ### 切流量
 
-- [ ] 5.1 .env 中 `POSTGRES_HOST` 从 `10.1.2.227` 改为 `timescaledb`
+- [ ] 5.1 .env 中 `POSTGRES_HOST` 从 `CHANGE_ME` 改为 `timescaledb`
 - [ ] 5.2 重启 docker 服务：`docker compose up -d chaowei-agent knb-celery-worker mqtt-etl`
 - [ ] 5.3 健康检查：`curl http://localhost:9300/api/health`
 
@@ -134,7 +134,7 @@
 | hypertable 数据量大（24+ 周数千万行）迁移耗时长 | 分批 `COPY` + gzip 压缩传输；预估 2~6 小时 |
 | 业务时序表数据导入期间内存爆 | 用 `psycopg2.cursor.copy_expert` 流式 + 每 50w 行一批 |
 | mqtt-etl 容器启动失败数据丢 | systemd 版未 disable，回切；dead_letter 兜底 |
-| 旧 `Focus&2025!` 密码有 `&` 特殊字符 | 改用无特殊字符的新强密码 |
+| 旧 `CHANGE_ME` 密码有 `&` 特殊字符 | 改用无特殊字符的新强密码 |
 
 ## 已知问题
 

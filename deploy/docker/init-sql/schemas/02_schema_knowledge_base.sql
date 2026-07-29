@@ -1,4 +1,4 @@
--- Schema-only dump of database `knowledge_base` (from remote 10.1.2.227, via psycopg2 introspection — pg_dump not available on this machine).
+-- Schema-only dump of database `knowledge_base` (from remote CHANGE_ME, via psycopg2 introspection — pg_dump not available on this machine).
 -- 幂等：全部 IF NOT EXISTS，可重复执行。
 
 CREATE TABLE IF NOT EXISTS kb_qa_messages (

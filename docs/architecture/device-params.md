@@ -17,7 +17,7 @@
 ### 1.2 数据流
 
 ```
-TimescaleDB (10.1.2.227:5432)
+TimescaleDB (CHANGE_ME:5432)
     └─ dev_device_param_detail_record  (时间序列原始数据)
     └─ dev_device_status_record        (运行时段)
     └─ device_info                     (设备列表)

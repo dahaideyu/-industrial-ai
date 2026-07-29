@@ -40,19 +40,19 @@ else:
 # 配置
 # ============================================================
 MYSQL_CONFIG = {
-    "host": os.getenv("MYSQL_HOST", "10.1.2.227"),
+    "host": os.getenv("MYSQL_HOST", "127.0.0.1"),
     "port": int(os.getenv("MYSQL_PORT", "3306")),
     "user": os.getenv("MYSQL_USER", "zxzz"),
-    "password": os.getenv("MYSQL_PASSWORD", "Focus&2025!"),
+    "password": os.getenv("MYSQL_PASSWORD", ""),
     "database": os.getenv("MYSQL_DATABASE", "jxcw"),
     "charset": "utf8mb4",
 }
 
 PG_CONFIG = {
-    "host": os.getenv("PG_HOST", "10.1.2.227"),
+    "host": os.getenv("PG_HOST", "127.0.0.1"),
     "port": os.getenv("PG_PORT", "5432"),
-    "user": os.getenv("PG_USER", "postgres"),
-    "password": os.getenv("PG_PASSWORD", "Focus&2025!"),
+    "user": os.getenv("PG_USER", "zxzz"),
+    "password": os.getenv("PG_PASSWORD", ""),
 }
 
 # 迁移时间范围

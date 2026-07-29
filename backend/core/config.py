@@ -72,3 +72,16 @@ try:
 except Exception as e:
     print(f"[错误] 配置加载失败: {e}")
     sys.exit(1)
+
+
+def get_llm_client(async_client: bool = False, timeout: float = 600.0):
+    """按 CONFIG（PROVIDER 环境变量决定的供应商）构造 OpenAI 兼容客户端。
+
+    Args:
+        async_client: True 返回 AsyncOpenAI，否则返回同步 OpenAI。
+        timeout: 请求超时时间（秒）。
+    """
+    from openai import AsyncOpenAI, OpenAI
+
+    cls = AsyncOpenAI if async_client else OpenAI
+    return cls(base_url=CONFIG["base_url"], api_key=CONFIG["api_key"], timeout=timeout)

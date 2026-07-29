@@ -67,7 +67,6 @@ sudo journalctl -u device-mqtt-etl -f
 |---|---|---|---|
 | `MQTT_TOPIC`（如 `Alarm/chaowei/jxcw`） | `AlarmMessageParser` | `device_alarm_info` | 报警点位，结构固定，按点位展平 |
 | `MQTT_TOPIC_NH`（如 `NH/chaowei/jxcw`） | `EnergyMessageParser` | `device_energy_info` | 电表能耗点位，结构已确认（11 台电表 × 31 点位，见 `docs/江西设备AI信息表.xlsx`「能耗参数」sheet），按点位展平 |
-| `MQTT_TOPIC_NH`（同上，双写） | `RawMessageParser` | `device_nh_raw` | 同一条消息原样落库做兜底/审计 |
 
 新增 topic 的思路：加一个 `Config.MQTT_TOPIC_XXX` + 对应 `Parser`/表，在
 `main.py` 的 `routes` 里注册即可，`MQTTClient`/`BatchBuffer` 都是通用的，不用改。
@@ -81,8 +80,6 @@ sudo journalctl -u device-mqtt-etl -f
 python mqtt_monitor.py
 # 消息会存到 ./mqtt_messages/<topic按/转下划线>_<时间戳>.json
 ```
-
-也可以直接查 `device_nh_raw` 表的 `raw_json` 列（同一份数据，主服务已在跑的话不用额外抓包）。
 
 ## 数据库表
 
@@ -105,17 +102,6 @@ CREATE TABLE public.device_alarm_info (
     load_time timestamp NULL,
     raw_json jsonb NULL
 );
-
--- NH topic 原样落库表（兜底/审计用，device_energy_info 才是结构化的主表）
-CREATE TABLE public.device_nh_raw (
-    id bigserial PRIMARY KEY,
-    topic varchar(255) NOT NULL,
-    raw_json jsonb NULL,
-    raw_text text NULL,
-    received_at timestamp NOT NULL,
-    load_time timestamp NULL
-);
-CREATE INDEX idx_device_nh_raw_received_at ON public.device_nh_raw (received_at);
 
 -- 电表能耗点位表。point_value 是电压/电流/功率/功率因数等连续量，用 numeric
 -- 保留小数（不像 device_alarm_info.point_value 那样截断成整数）。

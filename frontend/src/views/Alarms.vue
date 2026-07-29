@@ -144,7 +144,11 @@
 
         <div v-else class="p-12 text-center text-gray-400">
           <div class="mx-auto mb-4 h-10 w-10 rounded-md bg-slate-950"></div>
-          <p>暂无报警记录</p>
+          <p v-if="alarmsError" class="text-red-500 font-medium">{{ alarmsError }}</p>
+          <template v-else>
+            <p>暂无报警记录</p>
+            <p class="mt-1 text-xs">当前筛选条件下没有匹配的记录，可以尝试清空筛选条件或调整日期范围。</p>
+          </template>
         </div>
       </div>
 
@@ -224,6 +228,7 @@ const filters = ref({
   end_date: '',
   only_active: false
 })
+const alarmsError = ref('')
 
 const alarmInsight = computed(() => {
   const total = statistics.value.total || 0
@@ -306,6 +311,7 @@ async function loadStatistics() {
 }
 
 async function loadAlarms() {
+  alarmsError.value = ''
   try {
     const params = {
       page: pagination.value.page,
@@ -327,9 +333,16 @@ async function loadAlarms() {
         page_size: res.data.page_size,
         total_pages: res.data.total_pages
       }
+    } else {
+      alarms.value = []
+      alarmsError.value = res.msg || '加载报警记录失败'
     }
   } catch (err) {
     console.error('加载报警记录失败:', err)
+    alarms.value = []
+    alarmsError.value = err.response
+      ? (err.response.data?.msg || err.message)
+      : '连不上后端服务，请检查后端是否正常运行。'
   }
 }
 

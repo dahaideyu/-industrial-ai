@@ -712,8 +712,21 @@ async def list_entity_configs():
 @router.post("/entities/configs")
 async def create_entity_config(req: EntityConfigCreate):
     import json
-    from backend.services.agentic_qa.models.entity_config import EntityConfig
+    from backend.services.agentic_qa.models.entity_config import (
+        EntityConfig, validate_identifier, validate_filter_condition,
+    )
     from backend.core.agentic_qa.database import SessionLocal
+    try:
+        validate_identifier(req.table_name, "table_name")
+        validate_identifier(req.label_column, "label_column")
+        validate_identifier(req.value_column, "value_column")
+        for col in req.search_columns:
+            validate_identifier(col, "search_columns")
+        for col in req.context_columns:
+            validate_identifier(col, "context_columns")
+        validate_filter_condition(req.filter_condition)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     db = SessionLocal()
     try:
         existing = db.query(EntityConfig).filter(EntityConfig.entity_type == req.entity_type).first()
@@ -738,8 +751,22 @@ async def create_entity_config(req: EntityConfigCreate):
 @router.put("/entities/configs/{config_id}")
 async def update_entity_config(config_id: int, req: EntityConfigUpdate):
     import json
-    from backend.services.agentic_qa.models.entity_config import EntityConfig
+    from backend.services.agentic_qa.models.entity_config import (
+        EntityConfig, validate_identifier, validate_filter_condition,
+    )
     from backend.core.agentic_qa.database import SessionLocal
+    try:
+        if req.label_column is not None: validate_identifier(req.label_column, "label_column")
+        if req.value_column is not None: validate_identifier(req.value_column, "value_column")
+        if req.search_columns is not None:
+            for col in req.search_columns:
+                validate_identifier(col, "search_columns")
+        if req.context_columns is not None:
+            for col in req.context_columns:
+                validate_identifier(col, "context_columns")
+        if req.filter_condition is not None: validate_filter_condition(req.filter_condition)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     db = SessionLocal()
     try:
         cfg = db.query(EntityConfig).filter(EntityConfig.id == config_id).first()

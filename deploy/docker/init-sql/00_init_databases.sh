@@ -7,7 +7,7 @@ set -e
 
 echo "[init] 检查并创建 zxzz 角色..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-  -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'zxzz') THEN CREATE ROLE zxzz LOGIN SUPERUSER PASSWORD 'Admin@Zxzz'; END IF; END \$\$;"
+  -c "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'zxzz') THEN CREATE ROLE zxzz LOGIN SUPERUSER PASSWORD 'CHANGE_ME@Zxzz'; END IF; END \$\$;"
 
 echo "[init] 初始化 ${POSTGRES_DB} 库 schema（设备参数 / job）..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \

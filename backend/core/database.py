@@ -3,7 +3,7 @@
 PostgreSQL 数据库模块
 封装报告记录的建表、Upsert、查询操作
 
-环境变量读取链：PG_* → POSTGRES_* → 默认值
+环境变量：统一使用 PG_*（旧名兼容见 core/pg_env.py）
 """
 import json
 import logging
@@ -27,12 +27,13 @@ _pool_lock = threading.Lock()
 
 
 def _get_pg_config() -> Dict[str, str]:
-    """读取 PG 连接参数（统一使用 PG_* 环境变量）"""
-    host = os.getenv("PG_HOST", "127.0.0.1")
-    port = os.getenv("PG_PORT", "5432")
-    dbname = os.getenv("PG_DB", "knowledge_base")
-    user = os.getenv("PG_USER", "zxzz")
-    password = os.getenv("PG_PASSWORD", "")
+    """读取 PG 连接参数（默认值统一在 core.pg_env 定义，此处不再各写一套）"""
+    from core.pg_env import pg_env
+    host = pg_env("PG_HOST")
+    port = pg_env("PG_PORT")
+    dbname = pg_env("PG_DB")
+    user = pg_env("PG_USER")
+    password = pg_env("PG_PASSWORD")
     return {
         "host": host,
         "port": int(port),

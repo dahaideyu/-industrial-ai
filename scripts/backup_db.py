@@ -33,7 +33,7 @@ DB_CONFIG = {
     "host": "192.168.50.224",
     "port": 15432,
     "user": "zxzz",
-    "password": "Admin@Zxzz",
+    "password": "CHANGE_ME@Zxzz",
     "dbname": "knowledge_base",
 }
 

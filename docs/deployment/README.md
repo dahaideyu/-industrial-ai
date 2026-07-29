@@ -133,17 +133,17 @@ vim /opt/aiReport/.env
 ```bash
 # DeepSeek
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_API_KEY=sk-REDACTED
+DEEPSEEK_API_KEY=sk-your-deepseek-key-here
 DEEPSEEK_MODEL=deepseek-chat
 
 # Qwen (阿里云)
 QWEN3_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-QWEN3_API_KEY=sk-REDACTED
+QWEN3_API_KEY=sk-your-qwen-key-here
 QWEN3_MODEL=qwen-plus
 
 # OpenAI
 OPENAI_BASE_URL=https://api.openai-proxy.org/v1
-OPENAI_API_KEY=sk-REDACTED
+OPENAI_API_KEY=sk-your-openai-key-here
 OPENAI_MODEL=gpt-4
 
 # 本地模型
@@ -705,4 +705,3 @@ app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
 
 **文档版本**：v3.0
 **最后更新**：2026-04-30
-

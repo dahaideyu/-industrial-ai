@@ -11,8 +11,7 @@ logger = logging.getLogger(__name__)
 
 # topic -> [(parser, buffer), ...]；parser 需要实现 parse(payload: bytes, topic: str=None)
 # -> (records, raw_json)，buffer 是该 handler 自己的 BatchBuffer 实例。
-# 一个 topic 可以挂多个 handler（比如 NH topic 同时结构化解析入专属表 + 原样落库兜底），
-# 互不影响，一个 handler 抛异常不影响同 topic 上的其他 handler。
+# 一个 topic 可以挂多个 handler，互不影响；一个 handler 抛异常不影响其他 handler。
 TopicRoutes = Dict[str, List[Tuple[object, BatchBuffer]]]
 
 

@@ -1,0 +1,226 @@
+{
+  "workshops": [
+    {
+      "id": "chongbao2",
+      "name": "充包二车间",
+      "department": "生产部",
+      "production_lines": [
+        {
+          "id": "jiasuan2",
+          "name": "加酸二",
+          "devices": [
+            {
+              "id": "192168200120",
+              "name": "C区21系列#1自动加酸机",
+              "device_code": "192168200120",
+              "run_time": "2小时40分钟",
+              "run_time_seconds": 9360
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "jiban",
+      "name": "极板车间",
+      "department": "生产部",
+      "production_lines": [
+        {
+          "id": "zheng_chongwang",
+          "name": "正冲网",
+          "devices": [
+            {"id": "102000018528", "name": "1#制带线", "device_code": "102000018528", "run_time": "8小时39分钟", "run_time_seconds": 31140},
+            {"id": "102000018529", "name": "2#制带线", "device_code": "102000018529", "run_time": "4小时0分钟", "run_time_seconds": 14400},
+            {"id": "102000018530", "name": "连冲线（1号）", "device_code": "102000018530", "run_time": "12分钟39秒", "run_time_seconds": 759},
+            {"id": "102000018531", "name": "连冲线（2号）", "device_code": "102000018531", "run_time": "6分钟9秒", "run_time_seconds": 369},
+            {"id": "102000018532", "name": "连冲线（3号）", "device_code": "102000018532", "run_time": "30分钟4秒", "run_time_seconds": 1804},
+            {"id": "102000018533", "name": "连冲线（4号）", "device_code": "102000018533", "run_time": "24分钟44秒", "run_time_seconds": 1484}
+          ]
+        },
+        {
+          "id": "zheng_hegao3",
+          "name": "正和膏三",
+          "devices": [
+            {"id": "102000000995", "name": "正1#和膏机", "device_code": "102000000995", "run_time": "78天10小时", "run_time_seconds": 6771600},
+            {"id": "102000000996", "name": "正2#和膏机", "device_code": "102000000996", "run_time": "18分钟9秒", "run_time_seconds": 1089},
+            {"id": "102000018278", "name": "正3#和膏机", "device_code": "102000018278", "run_time": "25分钟54秒", "run_time_seconds": 1554},
+            {"id": "102000018279", "name": "正4#和膏机", "device_code": "102000018279", "run_time": "26分钟24秒", "run_time_seconds": 1584},
+            {"id": "102000018796", "name": "正5#和膏机", "device_code": "102000018796", "run_time": "21分钟19秒", "run_time_seconds": 1279}
+          ]
+        },
+        {
+          "id": "zheng_guhua3",
+          "name": "正固化三",
+          "devices": [
+            {"id": "102000018315", "name": "正1#金帆固化", "device_code": "102000018315", "run_time": "1天4小时", "run_time_seconds": 100800},
+            {"id": "102000018316", "name": "正2#金帆固化", "device_code": "102000018316", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018317", "name": "正3#金帆固化", "device_code": "102000018317", "run_time": "17小时42分钟", "run_time_seconds": 63720},
+            {"id": "102000018318", "name": "正4#金帆固化", "device_code": "102000018318", "run_time": "11小时30分钟", "run_time_seconds": 41400},
+            {"id": "102000018319", "name": "正5#金帆固化", "device_code": "102000018319", "run_time": "7小时57分钟", "run_time_seconds": 28620},
+            {"id": "102000018320", "name": "正6#金帆固化", "device_code": "102000018320", "run_time": "13小时9分钟", "run_time_seconds": 47340},
+            {"id": "102000018321", "name": "正7#金帆固化", "device_code": "102000018321", "run_time": "30分钟19秒", "run_time_seconds": 1819},
+            {"id": "102000018354", "name": "正8#金帆固化", "device_code": "102000018354", "run_time": "2天16小时", "run_time_seconds": 235200},
+            {"id": "102000018355", "name": "正9#金帆固化", "device_code": "102000018355", "run_time": "1小时31分钟", "run_time_seconds": 5460},
+            {"id": "102000018356", "name": "正10#金帆固化", "device_code": "102000018356", "run_time": "1小时31分钟", "run_time_seconds": 5460},
+            {"id": "102000018875", "name": "正11#金帆固化", "device_code": "102000018875", "run_time": "8小时36分钟", "run_time_seconds": 30960},
+            {"id": "102000018876", "name": "正12#金帆固化", "device_code": "102000018876", "run_time": "4小时40分钟", "run_time_seconds": 16800},
+            {"id": "102000018877", "name": "正13#金帆固化", "device_code": "102000018877", "run_time": "1天9小时", "run_time_seconds": 111600},
+            {"id": "102000018878", "name": "正14#金帆固化", "device_code": "102000018878", "run_time": "2天15小时", "run_time_seconds": 223200},
+            {"id": "102000018879", "name": "正15#金帆固化", "device_code": "102000018879", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018880", "name": "正16#金帆固化", "device_code": "102000018880", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018881", "name": "正17#金帆固化", "device_code": "102000018881", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000019038", "name": "正18#金帆固化", "device_code": "102000019038", "run_time": "1天20小时", "run_time_seconds": 165600},
+            {"id": "102000019039", "name": "正19#金帆固化", "device_code": "102000019039", "run_time": "1天16小时", "run_time_seconds": 148800},
+            {"id": "102000019040", "name": "正20#金帆固化", "device_code": "102000019040", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000019041", "name": "正21#金帆固化", "device_code": "102000019041", "run_time": "16小时4分钟", "run_time_seconds": 57840}
+          ]
+        },
+        {
+          "id": "zheng_qiumo3",
+          "name": "正球磨三",
+          "devices": [
+            {"id": "102000018415", "name": "正1#球磨机", "device_code": "102000018415", "run_time": "3天16小时", "run_time_seconds": 316800},
+            {"id": "102000018416", "name": "正2#球磨机", "device_code": "102000018416", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018418", "name": "正3#球磨机", "device_code": "102000018418", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018419", "name": "正4#球磨机", "device_code": "102000018419", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018417", "name": "正5#球磨机", "device_code": "102000018417", "run_time": "2天16小时", "run_time_seconds": 235200},
+            {"id": "102000018421", "name": "正6#球磨机", "device_code": "102000018421", "run_time": "2天16小时", "run_time_seconds": 235200},
+            {"id": "102000018420", "name": "正7#球磨机", "device_code": "102000018420", "run_time": "1小时36分钟", "run_time_seconds": 5760}
+          ]
+        },
+        {
+          "id": "zheng_liantu3",
+          "name": "正连涂三",
+          "devices": [
+            {"id": "102000018534", "name": "正1#连涂机", "device_code": "102000018534", "run_time": "14天10小时", "run_time_seconds": 1245600},
+            {"id": "102000018535", "name": "正2#连涂机", "device_code": "102000018535", "run_time": "10分钟44秒", "run_time_seconds": 644},
+            {"id": "102000018536", "name": "正3#连涂机", "device_code": "102000018536", "run_time": "21秒", "run_time_seconds": 21},
+            {"id": "102000018537", "name": "正4#连涂机", "device_code": "102000018537", "run_time": "10分钟44秒", "run_time_seconds": 644},
+            {"id": "102000018538", "name": "正5#连涂机", "device_code": "102000018538", "run_time": "17分钟59秒", "run_time_seconds": 1079}
+          ]
+        },
+        {
+          "id": "fu_hegao2",
+          "name": "负和膏二",
+          "devices": [
+            {"id": "102000018797", "name": "负1#和膏机", "device_code": "102000018797", "run_time": "7天21小时", "run_time_seconds": 684000},
+            {"id": "102000018798", "name": "负2#和膏机", "device_code": "102000018798", "run_time": "2小时18分钟", "run_time_seconds": 8280},
+            {"id": "102000018793", "name": "负3#和膏机", "device_code": "102000018793", "run_time": "8分钟4秒", "run_time_seconds": 484},
+            {"id": "102000018794", "name": "负4#和膏机", "device_code": "102000018794", "run_time": "4分钟39秒", "run_time_seconds": 279},
+            {"id": "102000018795", "name": "负5#和膏机", "device_code": "102000018795", "run_time": "3分钟44秒", "run_time_seconds": 224}
+          ]
+        },
+        {
+          "id": "fu_guhua2",
+          "name": "负固化二",
+          "devices": [
+            {"id": "102000018322", "name": "负1#金帆固化", "device_code": "102000018322", "run_time": "1天18小时", "run_time_seconds": 154800},
+            {"id": "102000018323", "name": "负2#金帆固化", "device_code": "102000018323", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018324", "name": "负3#金帆固化", "device_code": "102000018324", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018325", "name": "负4#金帆固化", "device_code": "102000018325", "run_time": "5小时25分钟", "run_time_seconds": 19500},
+            {"id": "102000018339", "name": "负5#金帆固化", "device_code": "102000018339", "run_time": "3小时11分钟", "run_time_seconds": 11460},
+            {"id": "102000018340", "name": "负6#金帆固化", "device_code": "102000018340", "run_time": "3小时21分钟", "run_time_seconds": 12060},
+            {"id": "102000018341", "name": "负7#金帆固化", "device_code": "102000018341", "run_time": "3小时12分钟", "run_time_seconds": 11520},
+            {"id": "102000018342", "name": "负8#金帆固化", "device_code": "102000018342", "run_time": "11小时29分钟", "run_time_seconds": 41340},
+            {"id": "102000018343", "name": "负9#金帆固化", "device_code": "102000018343", "run_time": "11小时31分钟", "run_time_seconds": 41460},
+            {"id": "102000018344", "name": "负10#金帆固化", "device_code": "102000018344", "run_time": "18分钟39秒", "run_time_seconds": 1119},
+            {"id": "102000018345", "name": "负11#金帆固化", "device_code": "102000018345", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018346", "name": "负12#金帆固化", "device_code": "102000018346", "run_time": "1小时36分钟", "run_time_seconds": 5760},
+            {"id": "102000018347", "name": "负13#金帆固化", "device_code": "102000018347", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018348", "name": "负14#金帆固化", "device_code": "102000018348", "run_time": "1天13小时", "run_time_seconds": 133200},
+            {"id": "102000018349", "name": "负15#金帆固化", "device_code": "102000018349", "run_time": "2天16小时", "run_time_seconds": 235200},
+            {"id": "102000018350", "name": "负16#金帆固化", "device_code": "102000018350", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018351", "name": "负17#金帆固化", "device_code": "102000018351", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000018352", "name": "负18#金帆固化", "device_code": "102000018352", "run_time": "14小时11分钟", "run_time_seconds": 51060},
+            {"id": "102000018353", "name": "负19#金帆固化", "device_code": "102000018353", "run_time": "15小时22分钟", "run_time_seconds": 55320},
+            {"id": "102000019036", "name": "负20#金帆固化", "device_code": "102000019036", "run_time": "5分钟4秒", "run_time_seconds": 304},
+            {"id": "102000019037", "name": "负21#金帆固化", "device_code": "102000019037", "run_time": "16小时4分钟", "run_time_seconds": 57840}
+          ]
+        },
+        {
+          "id": "fu_qiumo2",
+          "name": "负球磨二",
+          "devices": [
+            {"id": "102000000205", "name": "负1#球磨机", "device_code": "102000000205", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000000206", "name": "负2#球磨机", "device_code": "102000000206", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000013322", "name": "负3#球磨机", "device_code": "102000013322", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "102000013323", "name": "负4#球磨机", "device_code": "102000013323", "run_time": "1天17小时", "run_time_seconds": 148800},
+            {"id": "19216820082", "name": "负5#球磨机", "device_code": "19216820082", "run_time": "16小时4分钟", "run_time_seconds": 57840},
+            {"id": "19216820083", "name": "负6#球磨机", "device_code": "19216820083", "run_time": "16小时4分钟", "run_time_seconds": 57840}
+          ]
+        },
+        {
+          "id": "fu_liantu2",
+          "name": "负连涂二",
+          "devices": [
+            {"id": "102000019051", "name": "负1#连涂机", "device_code": "102000019051", "run_time": "8天11小时", "run_time_seconds": 729000},
+            {"id": "102000019052", "name": "负2#连涂机", "device_code": "102000019052", "run_time": "5分钟29秒", "run_time_seconds": 329},
+            {"id": "102000019053", "name": "负3#连涂机", "device_code": "102000019053", "run_time": "16分钟34秒", "run_time_seconds": 994},
+            {"id": "102000019054", "name": "负4#连涂机", "device_code": "102000019054", "run_time": "16秒", "run_time_seconds": 16},
+            {"id": "102000019055", "name": "负5#连涂机", "device_code": "102000019055", "run_time": "24分钟59秒", "run_time_seconds": 1499}
+          ]
+        },
+        {
+          "id": "fu_lianzhu2",
+          "name": "负连铸二",
+          "devices": [
+            {"id": "102000019046", "name": "1#负连铸线", "device_code": "102000019046", "run_time": "2小时22分钟", "run_time_seconds": 8520},
+            {"id": "102000018697", "name": "2#负连铸线", "device_code": "102000018697", "run_time": "1小时36分钟", "run_time_seconds": 5760},
+            {"id": "102000018762", "name": "3#负连铸线", "device_code": "102000018762", "run_time": "1分钟36秒", "run_time_seconds": 96},
+            {"id": "102000018699", "name": "4#负连铸线", "device_code": "102000018699", "run_time": "45分钟24秒", "run_time_seconds": 2724}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "zuzhuang2",
+      "name": "组装二车间",
+      "department": "生产部",
+      "production_lines": [
+        {
+          "id": "baopian2",
+          "name": "包片二",
+          "devices": [
+            {"id": "ZPS25090017", "name": "2#全自动极群装槽机", "device_code": "ZPS25090017", "run_time": "10分钟16秒", "run_time_seconds": 616},
+            {"id": "ZPS25090018", "name": "3#全自动极群装槽机", "device_code": "ZPS25090018", "run_time": "2分钟37秒", "run_time_seconds": 157},
+            {"id": "ZPS25090019", "name": "4#全自动极群装槽机", "device_code": "ZPS25090019", "run_time": "10分钟46秒", "run_time_seconds": 646},
+            {"id": "ZPS25090020", "name": "5#全自动极群装槽机", "device_code": "ZPS25090020", "run_time": "46秒", "run_time_seconds": 46},
+            {"id": "ZPS25090021", "name": "6#全自动极群装槽机", "device_code": "ZPS25090021", "run_time": "1分钟40秒", "run_time_seconds": 100},
+            {"id": "ZPS25090022", "name": "7#全自动极群装槽机", "device_code": "ZPS25090022", "run_time": "6分钟31秒", "run_time_seconds": 391},
+            {"id": "ZPS25090023", "name": "8#全自动极群装槽机", "device_code": "ZPS25090023", "run_time": "4分钟5秒", "run_time_seconds": 245},
+            {"id": "ZPS25090024", "name": "9#全自动极群装槽机", "device_code": "ZPS25090024", "run_time": "30秒", "run_time_seconds": 30}
+          ]
+        },
+        {
+          "id": "jiaofeng1",
+          "name": "胶封1线",
+          "devices": [
+            {"id": "102000000749", "name": "胶封1线（压盖）", "device_code": "102000000749", "run_time": "--", "run_time_seconds": 0},
+            {"id": "192168200140", "name": "1号胶封线气密检测", "device_code": "192168200140", "run_time": "1分钟20秒", "run_time_seconds": 80},
+            {"id": "192168200141", "name": "1号胶封线短路检测", "device_code": "192168200141", "run_time": "1小时23分钟", "run_time_seconds": 4980}
+          ]
+        },
+        {
+          "id": "jiaofeng2",
+          "name": "胶封2线",
+          "devices": [
+            {"id": "102000000750", "name": "胶封2线（压盖）", "device_code": "102000000750", "run_time": "--", "run_time_seconds": 0},
+            {"id": "192168200142", "name": "2号胶封线气密检测", "device_code": "192168200142", "run_time": "5秒", "run_time_seconds": 5},
+            {"id": "192168200143", "name": "2号胶封线短路检测", "device_code": "192168200143", "run_time": "1小时23分钟", "run_time_seconds": 4980}
+          ]
+        },
+        {
+          "id": "zhuohan2",
+          "name": "铸焊二",
+          "devices": [
+            {"id": "102000000723", "name": "铸焊一线1号铸焊机", "device_code": "102000000723", "run_time": "1小时53分钟", "run_time_seconds": 6780},
+            {"id": "102000000724", "name": "铸焊一线2号铸焊机", "device_code": "102000000724", "run_time": "4分钟5秒", "run_time_seconds": 245},
+            {"id": "102000000725", "name": "铸焊一线3号铸焊机", "device_code": "102000000725", "run_time": "26天3小时", "run_time_seconds": 2253600},
+            {"id": "102000000726", "name": "铸焊一线4号铸焊机", "device_code": "102000000726", "run_time": "1小时58分钟", "run_time_seconds": 7080},
+            {"id": "102000000727", "name": "铸焊一线5号铸焊机", "device_code": "102000000727", "run_time": "1小时58分钟", "run_time_seconds": 7080}
+          ]
+        }
+      ]
+    }
+  ]
+}

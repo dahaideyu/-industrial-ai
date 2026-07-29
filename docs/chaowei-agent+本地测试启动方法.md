@@ -14,21 +14,21 @@ PROVIDER=deepseek
 # DeepSeek 配置 (PROVIDER=deepseek 时使用)
 # ========================================
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_API_KEY=sk-REDACTED
+DEEPSEEK_API_KEY=CHANGE_ME
 DEEPSEEK_MODEL=deepseek-v4-flash
 
 # ========================================
 # Qwen (阿里灵积) 配置 (PROVIDER=qwen3 时使用)
 # ========================================
 QWEN3_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-QWEN3_API_KEY=sk-REDACTED
+QWEN3_API_KEY=sk-your-qwen-key-here
 QWEN3_MODEL=qwen-plus
 
 # ========================================
 # OpenAI 配置 (PROVIDER=openai 时使用)
 # ========================================
 OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=sk-REDACTED
+OPENAI_API_KEY=sk-your-openai-key-here
 OPENAI_MODEL=gpt-4
 
 # ========================================
@@ -41,17 +41,17 @@ LOCAL_QWEN3_MODEL=qwen3.5-27b
 # ========================================
 # PostgreSQL 配置（测试环境）
 # ========================================
-POSTGRES_HOST=10.1.2.227
+POSTGRES_HOST=CHANGE_ME
 POSTGRES_FALLBACK_HOST=218.90.129.90
 POSTGRES_PORT=5432
 POSTGRES_USER=postgres
-POSTGRES_PASSWORD=Focus&2025!
+POSTGRES_PASSWORD=CHANGE_ME
 
 # ========================================
 # RAGFlow 知识库配置（测试环境）
 # ========================================
 RAGFLOW_BASE_URL=http://10.1.2.232:9380
-RAGFLOW_API_KEY=ragflow-deHsn6xmgD84GgPqtskvFCX0pLipmHdnxdZoG3x4y7E
+RAGFLOW_API_KEY=CHANGE_ME
 RAGFLOW_CONVERSATION_ID=
 RAGFLOW_DATASET_ID=c3f4e6dc325e11f1884379f023bc5255
 RAGFLOW_MODEL=qwen-plus
@@ -62,7 +62,7 @@ RAGFLOW_EMBEDDING_MODEL=text-embedding-v4@Tongyi-Qianwen
 # ========================================
 UPSTREAM_MOCK=false
 UPSTREAM_BASE_URL=10.1.2.116:18081
-UPSTREAM_SECRET=ABCDEFGHIJJJ
+UPSTREAM_SECRET=CHANGE_ME
 UPSTREAM_TIMEOUT=30
 UPSTREAM_RETRY_COUNT=3
 
@@ -155,10 +155,10 @@ LOG_LEVEL=INFO
 ENABLE_SQL_QA=true
 
 # MySQL（被查询的业务数据库）
-AQA_MYSQL_HOST=10.1.2.227
+AQA_MYSQL_HOST=CHANGE_ME
 AQA_MYSQL_PORT=3306
 AQA_MYSQL_USER=zxzz
-AQA_MYSQL_PASSWORD=Focus&2025!
+AQA_MYSQL_PASSWORD=CHANGE_ME
 AQA_MYSQL_DATABASE=jxcw
 
 # Vanna
@@ -188,7 +188,7 @@ KNB_PG_HOST=localhost
 KNB_PG_PORT=5432
 KNB_PG_DB=knowledge_base
 KNB_PG_USER=zxzz
-KNB_PG_PASSWORD=Admin@Zxzz
+KNB_PG_PASSWORD=CHANGE_ME@Zxzz
 
 # Redis
 KNB_REDIS_URL=redis://localhost:6379/1
@@ -196,7 +196,7 @@ KNB_REDIS_URL=redis://localhost:6379/1
 # MinIO 对象存储
 KNB_MINIO_ENDPOINT=localhost:9000
 KNB_MINIO_ACCESS_KEY=zxzz
-KNB_MINIO_SECRET_KEY=Admin@Zxzz
+KNB_MINIO_SECRET_KEY=CHANGE_ME@Zxzz
 KNB_MINIO_BUCKET=knowledge-base
 
 
@@ -204,7 +204,7 @@ KNB_MINIO_BUCKET=knowledge-base
 # PLC 解析服务配置
 # ========================================
 # PLC解析模型API配置
-PLC_DASHSCOPE_API_KEY=sk-REDACTED
+PLC_DASHSCOPE_API_KEY=CHANGE_ME
 PLC_DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 
 # 模型配置
@@ -225,7 +225,7 @@ PLC_PDF_DPI=300
 ```
 cd docker
 
-docker compose up -d knb-postgresql knb-redis knb-minio knb-libreoffice
+docker compose up -d knb-postgresql knb-redis knb-minio
 ```
 
 3.在项目根目录启动前后端与celery队列
@@ -235,4 +235,3 @@ docker compose up -d knb-postgresql knb-redis knb-minio knb-libreoffice
 ```
 
 ​
-

@@ -34,13 +34,13 @@ REM 后续 backend\/frontend\ 等相对路径都是相对仓库根目录的，�
 cd /d "%SCRIPT_DIR%..\.."
 
 echo ============================================
-echo   Chaowei Agent - Local Dev Mode
+echo   Industrial AI - Local Dev Mode
 echo ============================================
 echo.
 
 REM Override Docker container names to localhost for local dev
-REM 2026-07: 本机模式下 PG 改连外部独立服务器（10.1.2.227）
-set KNB_PG_HOST=10.1.2.227
+REM 2026-07: 本机模式下 PG 改连外部独立服务器（CHANGE_ME）
+set KNB_PG_HOST=CHANGE_ME
 set KNB_MINIO_ENDPOINT=localhost:9000
 REM 2026-07: Docker Redis 容器在 host 暴露的是 16379 端口（非默认 6379）
 REM 注意：必须设 REDIS_URL（新名），不能只设 KNB_REDIS_URL（兼容旧名），
@@ -49,7 +49,7 @@ set REDIS_URL=redis://localhost:16379/1
 set KNB_REDIS_URL=redis://localhost:16379/1
 
 echo Infra connections:
-echo   PostgreSQL: 10.1.2.227:5432
+echo   PostgreSQL: CHANGE_ME:5432
 echo   Redis:      localhost:16379
 echo   MinIO:      localhost:9000
 echo.

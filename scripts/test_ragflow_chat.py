@@ -19,7 +19,7 @@ import httpx
 
 # ── 配置（优先本地 Docker，否则用 .env 中的远程地址） ──────────────
 BASE_URL = os.getenv("RAGFLOW_BASE_URL", "http://localhost:9380")
-API_KEY = os.getenv("RAGFLOW_API_KEY", "ragflow-fh3PH7Wwja1uRyTD4eXBZZzlCdyS13lOcQb_s0i37EY")
+API_KEY = os.getenv("RAGFLOW_API_KEY", "CHANGE_ME")
 HEADERS = {
     "Authorization": f"Bearer {API_KEY}",
     "Content-Type": "application/json",

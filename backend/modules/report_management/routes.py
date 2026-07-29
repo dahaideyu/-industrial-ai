@@ -3,6 +3,7 @@
 报告管理路由
 提供报告查询、下载、调试等功能
 """
+import asyncio
 import os
 import sys
 import json
@@ -219,14 +220,16 @@ async def download_document(request: DocumentDownloadRequest):
         from backend.clients.ragflow_client import get_ragflow_client
 
         client = get_ragflow_client()
-        content = client.download_document(request.document_id)
+        # download_document 要求显式传 dataset_id（不像 retrieve() 会自动回退），
+        # 没有单独指定时用客户端初始化时从 RAGFLOW_DATASET_ID 环境变量取到的默认值
+        response = await asyncio.to_thread(client.download_document, client.dataset_id, request.document_id)
 
-        if content is None:
+        if response is None:
             return error_response(msg="文档下载失败", code=404, status_code=404)
 
         from fastapi.responses import Response
         return Response(
-            content=content,
+            content=response.content,
             media_type="application/octet-stream",
             headers={"Content-Disposition": f"attachment; filename={request.document_id}"}
         )

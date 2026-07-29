@@ -14,6 +14,8 @@ from typing import Dict, List, Tuple, Optional
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from core.pg_env import pg_params
+
 
 class CorrelationAnalyzer:
     """参数相关性分析器"""
@@ -26,14 +28,7 @@ class CorrelationAnalyzer:
     def connect(self) -> bool:
         """建立数据库连接"""
         try:
-            self.conn = psycopg2.connect(
-                host=os.getenv("PG_HOST", "10.1.2.227"),
-                port=os.getenv("PG_PORT", "5432"),
-                dbname=os.getenv("PG_DB", "knowledge_base"),
-                user=os.getenv("PG_USER", "postgres"),
-                password=os.getenv("PG_PASSWORD", "Focus&2025!"),
-                connect_timeout=10,
-            )
+            self.conn = psycopg2.connect(**pg_params())
             print("✓ PostgreSQL 连接成功")
             return True
         except Exception as e:
@@ -403,11 +398,8 @@ class CorrelationAnalyzer:
 
 def main():
     """主函数"""
-    # 设置环境变量（如果需要）
-    os.environ.setdefault("PG_HOST", "10.1.2.227")
-    os.environ.setdefault("PG_PORT", "5432")
-    os.environ.setdefault("PG_USER", "postgres")
-    os.environ.setdefault("PG_PASSWORD", "Focus&2025!")
+    # 连接参数从环境变量读（PG_HOST/PG_PORT/PG_DB/PG_USER/PG_PASSWORD），
+    # 不在源码里兜底生产口令 —— 漏配就应该连不上并报错
     
     analyzer = CorrelationAnalyzer()
     

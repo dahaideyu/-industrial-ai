@@ -71,7 +71,15 @@ async function run() {
     result.value = res
     if (res.status === 'error') error.value = res.error_message || '生成失败'
   } catch (err) {
-    error.value = err.message
+    if (!err.response) {
+      // 没有 response = 请求根本没打通，不是业务报错——维修建议是独立部署的微服务(独立容器/端口)，
+      // 这种情况几乎总是那个服务没启动，而不是这次请求本身的问题
+      error.value = '维修建议服务当前不可达（这是一个独立部署的服务，可能还没启动），请联系运维确认 repair-suggestion 服务是否已启动。'
+    } else if (err.response.status === 404) {
+      error.value = '维修建议接口不存在（404），请确认服务版本或部署配置。'
+    } else {
+      error.value = err.response?.data?.msg || err.response?.data?.detail || err.message
+    }
   } finally {
     loading.value = false
   }

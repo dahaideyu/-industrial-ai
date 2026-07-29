@@ -1,5 +1,6 @@
 # cython: annotation_typing=False, infer_types=False, language_level=3
 """Agentic QA + Vanna 2.0 + RAGFlow API 路由"""
+import asyncio
 import json
 import time
 import traceback
@@ -386,7 +387,7 @@ async def preview_document(dataset_id: str, document_id: str):
     import base64
     from backend.services.agentic_qa.ragflow.client import ragflow_client
 
-    content, err = ragflow_client.download_document(dataset_id, document_id)
+    content, err = await asyncio.to_thread(ragflow_client.download_document, dataset_id, document_id)
     if err:
         raise HTTPException(status_code=502, detail=err)
     return {"success": True, "content": base64.b64encode(content).decode("ascii")}
@@ -398,7 +399,7 @@ async def download_document(dataset_id: str, document_id: str):
     from fastapi.responses import Response
     from backend.services.agentic_qa.ragflow.client import ragflow_client
 
-    content, err = ragflow_client.download_document(dataset_id, document_id)
+    content, err = await asyncio.to_thread(ragflow_client.download_document, dataset_id, document_id)
     if err:
         raise HTTPException(status_code=502, detail=err)
     # 以 PDF MIME 返回，浏览器内置 PDF 查看器会直接渲染

@@ -1,7 +1,7 @@
 # 本地 TimescaleDB 容器 —— 首次启动初始化脚本
 
 供 `docker compose --profile local-db up -d postgresql`（见 `deploy/docker/docker-compose.yml`）
-在**空数据卷**下自动执行，建库建表，免除本地开发对远程 10.1.2.227 隧道的依赖。
+在**空数据卷**下自动执行，建库建表，免除本地开发对远程 CHANGE_ME 隧道的依赖。
 
 ## 目录结构
 
