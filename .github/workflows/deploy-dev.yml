@@ -8,12 +8,85 @@ on:
 
 concurrency:
   group: industrial-ai-dev-deploy
-  cancel-in-progress: true
+  # Do not interrupt a deployment halfway through. A newer push waits for the
+  # current deployment and then replaces it.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/dahaideyu/industrial-ai
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push application image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          target: final-app
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:dev
+          build-args: |
+            COMPILE_SOURCE=false
+            VITE_ENABLE_SQL_QA=true
+          cache-from: type=gha,scope=industrial-ai-app
+          cache-to: type=gha,mode=max,scope=industrial-ai-app
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          target: final-worker
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}-worker:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}-worker:dev
+          build-args: |
+            COMPILE_SOURCE=false
+          cache-from: type=gha,scope=industrial-ai-worker
+          cache-to: type=gha,mode=max,scope=industrial-ai-worker
+
+      - name: Build and push lean image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          target: final-base
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}-lean:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}-lean:dev
+          build-args: |
+            COMPILE_SOURCE=false
+          cache-from: type=gha,scope=industrial-ai-lean
+          cache-to: type=gha,mode=max,scope=industrial-ai-lean
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,7 +108,7 @@ jobs:
             -e "ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 -p ${{ secrets.DEPLOY_PORT }} -i ~/.ssh/id_ed25519" \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/industrial-ai/"
 
-      - name: Build and restart
+      - name: Pull images and restart
         shell: bash
         run: |
           ssh -o ServerAliveInterval=20 -o ServerAliveCountMax=30 \
@@ -51,10 +124,22 @@ jobs:
           ln -sfn /data/industrial-ai/config/.env deploy/docker/.env
           docker volume inspect industrial_pgdata >/dev/null 2>&1 || docker volume create industrial_pgdata
           docker volume inspect industrial_minio >/dev/null 2>&1 || docker volume create industrial_minio
-          APP_DATA_ROOT=/data/industrial-ai APP_PORT=9300 \
-            docker compose \
+          printf '%s' '${{ secrets.GITHUB_TOKEN }}' | \
+            docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          export IMAGE_NAME='${{ env.IMAGE_NAME }}'
+          export IMAGE_TAG='${{ github.sha }}'
+          export APP_DATA_ROOT=/data/industrial-ai
+          export APP_PORT=9300
+          docker compose \
+            -f deploy/docker/docker-compose.yml \
+            -f deploy/docker/docker-compose.tencent.yml \
+            --profile local-db \
+            pull
+          docker compose \
               -f deploy/docker/docker-compose.yml \
+              -f deploy/docker/docker-compose.tencent.yml \
               --profile local-db \
-              up -d --build --remove-orphans
+              up -d --no-build --remove-orphans
           curl --fail --retry 20 --retry-delay 3 http://127.0.0.1:9300/
           REMOTE

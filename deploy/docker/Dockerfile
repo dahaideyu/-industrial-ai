@@ -42,10 +42,16 @@ RUN mkdir -p /opt/.tmp && \
 # 测试环境不编译（构建快、方便调试），生产环境编译（保护源码）
 FROM python:3.12-slim AS code-protect
 ARG COMPILE_SOURCE=true
-# 使用阿里云镜像加速 apt 安装
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
-    apt-get update && apt-get install -y gcc python3-dev build-essential && \
-    pip install cython -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 只有生产源码保护构建才需要编译工具链。测试/CI 使用
+# COMPILE_SOURCE=false 时不再白白下载 gcc、Python headers 和 Cython。
+RUN if [ "$COMPILE_SOURCE" = "true" ]; then \
+        sed -i 's/deb.debian.org/mirrors.cloud.tencent.com/g' /etc/apt/sources.list.d/debian.sources && \
+        apt-get update && apt-get install -y --no-install-recommends gcc python3-dev build-essential && \
+        pip install cython -i https://pypi.tuna.tsinghua.edu.cn/simple && \
+        rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "=== COMPILE_SOURCE=false，跳过 Cython 编译工具链安装 ==="; \
+    fi
 WORKDIR /build
 COPY --from=backend-deps /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
@@ -56,7 +62,11 @@ COPY backend/ ./backend/
 # 2. 修复 str | None 等类型注解为 Optional[str]
 # 3. 转换复杂 f-string 为 .format()
 COPY deploy/docker/scripts/fix_cython_compat.py /tmp/fix_cython_compat.py
-RUN python /tmp/fix_cython_compat.py backend
+RUN if [ "$COMPILE_SOURCE" = "true" ]; then \
+        python /tmp/fix_cython_compat.py backend; \
+    else \
+        echo "=== COMPILE_SOURCE=false，跳过 Cython 源码兼容性改写 ==="; \
+    fi
 
 # 条件编译：COMPILE_SOURCE=true 时执行 Cython 编译，否则直接跳过
 # 并行编译：各文件互不依赖，xargs -P 吃满核数（串行 ~10 分钟 → 并行 1-2 分钟）；
