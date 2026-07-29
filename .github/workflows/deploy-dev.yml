@@ -85,7 +85,10 @@ jobs:
             type=gha,scope=industrial-ai-app
             type=gha,scope=industrial-ai-worker
             type=gha,scope=industrial-ai-lean
-          cache-to: type=gha,mode=max,scope=industrial-ai-worker
+          # mode=min（app 那边才用 max）：Actions 缓存每仓库上限 10 GB 且不跨 key 去重，
+          # 三个 scope 都存全量中间层会撑爆并触发 LRU 驱逐，反而让缓存长期失效。
+          # 公共阶段由上面 app 的 max 缓存提供，这里只导出自身最终层即可。
+          cache-to: type=gha,mode=min,scope=industrial-ai-worker
 
       - name: Build and push lean image
         uses: docker/build-push-action@v6
@@ -106,7 +109,7 @@ jobs:
             type=gha,scope=industrial-ai-app
             type=gha,scope=industrial-ai-worker
             type=gha,scope=industrial-ai-lean
-          cache-to: type=gha,mode=max,scope=industrial-ai-lean
+          cache-to: type=gha,mode=min,scope=industrial-ai-lean
 
   deploy:
     needs: build
@@ -216,3 +219,37 @@ jobs:
               up -d --no-build --remove-orphans
           curl --fail --retry 20 --retry-delay 3 http://127.0.0.1:9300/
           REMOTE
+
+  # 每次部署成功后清理 GHCR 上的历史镜像版本，避免 package 存储无限增长。
+  # 只保留 2 个版本 = 当前这次 + 上一次，再往前的自动删除。
+  # 放在 deploy 之后而不是用 schedule 触发：本 workflow 的 push 触发会连带跑 build/deploy，
+  # 加 schedule 会导致定时空跑一次部署；挂在 needs: deploy 上则天然只在有新镜像时才清理。
+  #
+  # 注意：一次 build 推两个 tag（<sha> 和 dev），但它们指向同一个 digest，算 1 个版本。
+  # min-versions-to-keep 按创建时间保留最新的 N 个，当前 dev 必然在内，不会误删在用镜像。
+  # 回滚能力因此被限制为「只能回退到上一次」，这是保留 2 个版本的代价。
+  cleanup:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - industrial-ai
+          - industrial-ai-worker
+          - industrial-ai-lean
+    steps:
+      # continue-on-error：清理失败不该把整条部署标红。用户名下（非组织）的 package
+      # 用 GITHUB_TOKEN 删除有时会 403，那种情况改传一个带 delete:packages 权限的 PAT：
+      #   token: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+      - name: Delete old image versions
+        continue-on-error: true
+        uses: actions/delete-package-versions@v5
+        with:
+          owner: ${{ github.repository_owner }}
+          package-name: ${{ matrix.package }}
+          package-type: container
+          min-versions-to-keep: 2
