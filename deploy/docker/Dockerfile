@@ -43,10 +43,13 @@ RUN mkdir -p /opt/.tmp && \
 # 测试环境不编译（构建快、方便调试），生产环境编译（保护源码）
 FROM python:3.12-slim AS code-protect
 ARG COMPILE_SOURCE=true
-# 只有生产源码保护构建才需要编译工具链。测试/CI 使用
-# COMPILE_SOURCE=false 时不再白白下载 gcc、Python headers 和 Cython。
+ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
+# 只有生产源码保护构建才需要编译工具链。测试/CI 用 COMPILE_SOURCE=false 时
+# 不再白白下载 gcc、Python headers 和 Cython（这几个包不小，且每次都要装）。
 RUN if [ "$COMPILE_SOURCE" = "true" ]; then \
-        sed -i 's/deb.debian.org/mirrors.cloud.tencent.com/g' /etc/apt/sources.list.d/debian.sources && \
+        if [ -n "$APT_MIRROR" ]; then \
+            sed -i "s|http://deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+        fi && \
         apt-get update && apt-get install -y --no-install-recommends gcc python3-dev build-essential && \
         pip install cython -i https://pypi.tuna.tsinghua.edu.cn/simple && \
         rm -rf /var/lib/apt/lists/*; \
@@ -110,23 +113,21 @@ RUN if [ "$COMPILE_SOURCE" = "true" ]; then \
 FROM python:3.12-slim AS final-base
 WORKDIR /app
 
-# apt 源可切换。放在 final-base 而不是各子阶段：下游 final-office/final-worker/
-# final-app 都 FROM 过来，改这一处即可被全部继承。
-# 默认空 = 用 deb.debian.org。CI 构建跑在 GitHub runner（境外）上，走腾讯云源反而更慢，
-# 所以默认不换；只有在腾讯云服务器上本地构建时才传：
-#   docker compose build --build-arg APT_MIRROR=mirrors.cloud.tencent.com
-ARG APT_MIRROR=""
-RUN if [ -n "$APT_MIRROR" ]; then \
-        sed -i "s/deb.debian.org/$APT_MIRROR/g" /etc/apt/sources.list.d/debian.sources && \
-        echo "=== apt 源已切换到 $APT_MIRROR ==="; \
-    fi
-
 # 设置时区为北京时间
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# curl（健康检查）+ PostgreSQL 客户端（pg_isready，entrypoint 等待依赖用）
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# apt 换源开关。默认清华源（国内下载 deb 包快 10 倍+），适用于在腾讯云服务器上本地
+# 构建的场景；下游 final-office/final-worker/final-app 都 FROM 过来，继承这一层，
+# 不必各自重复。
+# GitHub Actions 的构建跑在境外 runner 上，走国内源反而更慢，workflow 里传
+# APT_MIRROR= （空值）关掉即可，此时用官方 deb.debian.org。
+ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|http://deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources && \
+        echo "=== apt 源已切换到 $APT_MIRROR ==="; \
+    fi && \
+    apt-get update && apt-get install -y --no-install-recommends \
     curl postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
@@ -160,7 +161,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # ---- Stage 3.5: LibreOffice + 中文字体公共层 ----
 # final-worker 和 final-app 都需要 LibreOffice + fonts-noto-cjk（几百 MB）。原先两个
-# 阶段各装一遍 = 同一批包下载安装两次；抽成公共层后只下一次，两个 target 共享同一层缓存。
+# 阶段各装一遍，等于同一批包下载安装两次；抽成公共层后只下一次，两个 target 共享同一
+# 层缓存。镜像分发时（docker pull）也只需传输一次，跨境拉取尤其明显。
 # 不并入 final-base，是为了保持 repair-suggestion/mqtt-etl 的轻量（见文件头注释）。
 FROM final-base AS final-office
 RUN apt-get update && apt-get install -y --no-install-recommends \

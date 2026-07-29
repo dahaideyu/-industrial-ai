@@ -47,10 +47,23 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.IMAGE_NAME }}:dev
+          # provenance/sbom 关掉：默认会额外生成证明制品，把镜像变成多 manifest 索引，
+          # push 和 pull 都要多传一轮。这条流水线不做供应链签名校验，纯属开销。
+          provenance: false
+          sbom: false
+          # APT_MIRROR= （空）：构建跑在境外 runner 上，走国内镜像源反而更慢，
+          # 用官方 deb.debian.org。服务器本地构建时不传此参数，走 Dockerfile 里的清华源默认值。
           build-args: |
             COMPILE_SOURCE=false
             VITE_ENABLE_SQL_QA=true
-          cache-from: type=gha,scope=industrial-ai-app
+            APT_MIRROR=
+          # cache-from 读三个 scope：app/worker/lean 共享 backend-deps、code-protect、
+          # final-base、final-office 这几层，跨 scope 读取可以让冷启动时也复用，
+          # 不必每个 scope 各自重建一遍公共阶段。cache-to 仍写各自 scope，避免互相覆盖。
+          cache-from: |
+            type=gha,scope=industrial-ai-app
+            type=gha,scope=industrial-ai-worker
+            type=gha,scope=industrial-ai-lean
           cache-to: type=gha,mode=max,scope=industrial-ai-app
 
       - name: Build and push worker image
@@ -63,9 +76,15 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}-worker:${{ github.sha }}
             ${{ env.IMAGE_NAME }}-worker:dev
+          provenance: false
+          sbom: false
           build-args: |
             COMPILE_SOURCE=false
-          cache-from: type=gha,scope=industrial-ai-worker
+            APT_MIRROR=
+          cache-from: |
+            type=gha,scope=industrial-ai-app
+            type=gha,scope=industrial-ai-worker
+            type=gha,scope=industrial-ai-lean
           cache-to: type=gha,mode=max,scope=industrial-ai-worker
 
       - name: Build and push lean image
@@ -78,9 +97,15 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}-lean:${{ github.sha }}
             ${{ env.IMAGE_NAME }}-lean:dev
+          provenance: false
+          sbom: false
           build-args: |
             COMPILE_SOURCE=false
-          cache-from: type=gha,scope=industrial-ai-lean
+            APT_MIRROR=
+          cache-from: |
+            type=gha,scope=industrial-ai-app
+            type=gha,scope=industrial-ai-worker
+            type=gha,scope=industrial-ai-lean
           cache-to: type=gha,mode=max,scope=industrial-ai-lean
 
   deploy:
