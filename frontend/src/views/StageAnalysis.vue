@@ -2,21 +2,6 @@
   <div class="space-y-5">
     <!-- Controls -->
     <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap items-end gap-4">
-      <div>
-        <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">回溯范围</label>
-        <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-          <button v-for="d in DAY_OPTIONS" :key="d.v" @click="days = d.v; load()"
-            class="px-3 py-1.5 text-xs rounded-md transition-colors"
-            :class="days === d.v ? 'bg-white text-gray-900 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'">
-            {{ d.label }}
-          </button>
-        </div>
-      </div>
-      <button @click="load" :disabled="loading || !deviceCode"
-        class="px-5 py-2 bg-amber-400 text-on-primary-container text-sm font-bold rounded-lg hover:bg-amber-500 transition-colors disabled:opacity-50">
-        {{ loading ? '分析中...' : '刷新' }}
-      </button>
-
       <!-- 按阶段 / 按状态：决定"固定哪个单元跨周期对比" -->
       <div>
         <span class="block text-[10px] text-gray-400 mb-1">对比粒度</span>
@@ -41,11 +26,14 @@
       </div>
     </div>
 
-    <!-- States -->
-    <div v-if="loading" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
+    <!-- States：跟其它3个Tab一样直接吃父组件按选中班次/天取回的 stageResult，不再自己拉数据 -->
+    <div v-if="!stageResult" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
+      <div class="text-3xl mb-3">📋</div><p>按上方选择班次/天，自动分析阶段配方</p>
+    </div>
+    <div v-else-if="stageResult.source === 'loading'" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
       <div class="text-3xl mb-3 animate-spin">⏳</div><p>正在按阶段拆分参数...</p>
     </div>
-    <div v-else-if="errMsg" class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">⚠ {{ errMsg }}</div>
+    <div v-else-if="stageResult.source === 'error'" class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">⚠ {{ stageResult.msg }}</div>
 
     <template v-else-if="data">
       <!-- Summary -->
@@ -56,11 +44,11 @@
         <div><span class="text-gray-400">周期数</span>
           <span class="font-bold ml-1" :class="enoughCycles ? 'text-gray-800' : 'text-rose-500'">{{ data.window.batch_count }}</span></div>
         <div><span class="text-gray-400">单周期(中位)≈</span><span class="font-bold text-gray-800 ml-1">{{ cycleText }}</span></div>
-        <div class="text-xs text-gray-400">窗口 {{ data.window.days }} 天<span v-if="data.window.auto_extended" class="text-amber-600 ml-1">(已自动扩到 ≥{{ data.window.min_cycles }} 周期)</span></div>
+        <div class="text-xs text-gray-400">窗口 {{ data.window.days }} 天</div>
         <div class="text-xs text-gray-400 ml-auto">{{ data.window.start.slice(5,16) }} ~ {{ data.window.end.slice(5,16) }}</div>
       </div>
       <div v-if="!enoughCycles" class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700 -mt-2">
-        ⚠ 窗口内只有 {{ data.window.batch_count }} 个周期，不足以稳定对比，请加大"回溯范围"。
+        ⚠ 窗口内只有 {{ data.window.batch_count }} 个周期，样本较少，统计可能不稳定，可尝试切换到跨度更长的"天"分析单位
       </div>
 
       <!-- 状态分组说明 -->
@@ -205,8 +193,7 @@
           </button>
         </div>
 
-        <div v-if="focusLoading" class="text-center py-10 text-gray-400 text-sm">加载中...</div>
-        <template v-else-if="focus && focus.batches.length">
+        <template v-if="focus && focus.batches.length">
           <!-- 图表1：周期时长对比 -->
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
             <div>
@@ -264,32 +251,34 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { getStageAnalysis, saveStageStateConfig } from '../api/client.js'
+import { saveStageStateConfig } from '../api/client.js'
 
-const props = defineProps({ deviceCode: { type: String, default: '' } })
+// stageResult：父组件(DeviceParams.vue)按选中的班次/天(shift 或 day)统一取回、
+// 落库缓存的分析结果，跟 StageCpkPanel/EnergyBreakdown 同一套约定——本组件不再
+// 自己维护"回溯N天"的独立时间窗口，也不再自己发请求。
+const props = defineProps({ stageResult: { type: Object, default: null } })
+const emit = defineEmits(['reload'])
 
-const DAY_OPTIONS = [
-  { v: 0.25, label: '最近6小时' }, { v: 0.5, label: '最近12小时' },
-  { v: 1, label: '最近1天' }, { v: 3, label: '最近3天' },
-]
 const COLORS = [
   '#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6',
   '#ec4899', '#06b6d4', '#f97316', '#84cc16', '#6366f1',
   '#14b8a6', '#e11d48', '#a855f7', '#0ea5e9', '#d946ef',
 ]
 
-const days = ref(0.25)            // 默认 6 小时：小窗口在隧道下也能秒回，且够多周期对比
 const level = ref('stage')        // 'stage' | 'state'  —— 默认按阶段
 const metric = ref('mean')        // 'mean' | 'delta'
-const loading = ref(false)
-const errMsg = ref('')
-const data = ref(null)
 const selectedParams = ref([])
 
-// 跨周期对比：固定的单元(阶段码或状态名) + 它的逐周期数据
+// props.stageResult 可能是 null / {source:'loading'} / {source:'error',msg} / 真实数据，
+// data 只在真实数据时非空，下面所有渲染逻辑都读 data(跟原来读本地 ref 的写法完全一样)。
+const data = computed(() => {
+  const r = props.stageResult
+  if (!r || r.source === 'loading' || r.source === 'error') return null
+  return r
+})
+
+// 跨周期对比：固定的单元(阶段码或状态名)
 const selectedUnit = ref(null)
-const focus = ref(null)
-const focusLoading = ref(false)
 
 const cmpEl = ref(null)
 let cmpChart = null
@@ -320,8 +309,7 @@ const rows = computed(() => {
   return data.value.stages
 })
 const unitLabel = computed(() => (level.value === 'state' ? '状态' : '阶段'))
-const enoughCycles = computed(() =>
-  !data.value ? true : data.value.window.batch_count >= (data.value.window.min_cycles || 3))
+const enoughCycles = computed(() => !data.value ? true : data.value.window.batch_count >= 3)
 const cycleText = computed(() => {
   const m = data.value?.window?.cycle_min || 0
   if (!m) return '—'
@@ -329,6 +317,58 @@ const cycleText = computed(() => {
 })
 const availableCodes = computed(() =>
   [...new Set((data.value?.stages || []).map(s => s.stage))].sort((a, b) => a - b))
+
+// ── 同阶段/状态跨周期对比：完全从已有的 data.batches[].segments[].means/deltas
+// 就地筛选重组，不再单独发 focus_stage/focus_state 请求(那样每点一次要重新请求
+// 一遍分析，现在数据已经在 batches[] 里了)。stage 级是精确重建(直接对应一个
+// segment)；state 级因为一个状态可能横跨一个周期里的多个不连续段，按段时长
+// 加权平均均值、直接求和Δ，是合理近似，不追求跟后端旧接口逐位对齐。 ──
+const focus = computed(() => {
+  if (!data.value || selectedUnit.value == null) return null
+  const batches = data.value.batches || []
+  const out = []
+  if (level.value === 'stage') {
+    const stageCode = selectedUnit.value
+    for (const b of batches) {
+      for (const s of (b.segments || [])) {
+        if (s.stage !== stageCode) continue
+        out.push({
+          batch: b.batch,
+          start: `${b.start.slice(0, 10)} ${s.start}:00`,
+          dur_min: s.dur_min,
+          means: s.means || {},
+          deltas: s.deltas || {},
+        })
+      }
+    }
+  } else {
+    const stateName = selectedUnit.value
+    for (const b of batches) {
+      const segs = (b.segments || []).filter(s => s.state === stateName)
+      if (!segs.length) continue
+      const totalDur = segs.reduce((a, s) => a + (s.dur_min || 0), 0) || 1
+      const means = {}, deltas = {}
+      for (const s of segs) {
+        for (const [p, v] of Object.entries(s.means || {})) {
+          means[p] = (means[p] || 0) + v * (s.dur_min || 0) / totalDur
+        }
+        for (const [p, v] of Object.entries(s.deltas || {})) {
+          deltas[p] = (deltas[p] || 0) + v
+        }
+      }
+      for (const p in means) means[p] = Math.round(means[p] * 1000) / 1000
+      for (const p in deltas) deltas[p] = Math.round(deltas[p] * 1000) / 1000
+      out.push({
+        batch: b.batch,
+        start: `${b.start.slice(0, 10)} ${segs[0].start}:00`,
+        dur_min: Math.round(totalDur * 10) / 10,
+        means, deltas,
+      })
+    }
+  }
+  out.sort((a, b) => a.start.localeCompare(b.start))
+  return { level: level.value, unit: selectedUnit.value, batches: out }
+})
 
 // ── 周期·阶段排列图 ──
 const ganttHeight = computed(() => {
@@ -383,8 +423,7 @@ function setLevel(lv) {
   level.value = lv
   const first = rows.value[0]
   selectedUnit.value = first ? rowId(first) : null
-  nextTick(renderGantt)   // 排列图按 level 上色，切换后重画
-  loadFocus()
+  nextTick(renderGantt)   // 排列图按 level 上色，切换后重画；对比图由 watch(focus) 触发重画
 }
 
 function toggleParam(pn) {
@@ -394,66 +433,9 @@ function toggleParam(pn) {
   nextTick(renderCompare)
 }
 
-async function load() {
-  if (!props.deviceCode) return
-  loading.value = true
-  errMsg.value = ''
-  focus.value = null
-  try {
-    const res = await getStageAnalysis({ device_code: props.deviceCode, days: days.value, min_cycles: 3 })
-    if (res.code === 200 && res.data) {
-      data.value = res.data
-      if (level.value === 'state' && !(res.data.states?.length)) level.value = 'stage'
-      selectedParams.value = res.data.params.map(p => p.p_name).slice(0, Math.min(4, res.data.params.length))
-      const first = rows.value[0]
-      selectedUnit.value = first ? rowId(first) : null
-      await loadFocus()
-    } else {
-      data.value = null
-      errMsg.value = res.msg || '阶段分析失败'
-    }
-  } catch (e) {
-    data.value = null
-    errMsg.value = e.message || '阶段分析失败'
-  } finally {
-    loading.value = false
-  }
-  // loading 关闭后图表容器才挂回 DOM，此时才能真正画图
-  await nextTick()
-  renderGantt()
-  renderCompare()
-}
-
 function selectUnit(id) {
   if (selectedUnit.value === id) return
-  selectedUnit.value = id
-  loadFocus()
-}
-
-async function loadFocus() {
-  if (selectedUnit.value == null || !data.value) { focus.value = null; return }
-  focusLoading.value = true
-  try {
-    const params = {
-      device_code: props.deviceCode,
-      start_time: data.value.window.start,
-      end_time: data.value.window.end,
-    }
-    if (level.value === 'state') params.focus_state = selectedUnit.value
-    else params.focus_stage = selectedUnit.value
-    const res = await getStageAnalysis(params)
-    focus.value = (res.code === 200 && res.data?.focus) ? res.data.focus : { batches: [] }
-  } catch (e) {
-    console.error('加载逐周期对比失败', e)
-    focus.value = { batches: [] }
-  } finally {
-    focusLoading.value = false
-  }
-  // focusLoading 关闭后 v-else-if 分支才渲染出 cmpEl，再画图
-  await nextTick()
-  renderCycleDurChart()
-  renderCycleValueChart()
-  renderCompare()
+  selectedUnit.value = id   // focus 是 computed，自动跟着重算；watch(focus) 负责重画图表
 }
 
 function toggleGanttLegend(key) {
@@ -713,11 +695,13 @@ async function saveConfig() {
   saving.value = true
   editErr.value = ''
   try {
-    const res = await saveStageStateConfig({ device_code: props.deviceCode, config })
+    const res = await saveStageStateConfig({ device_code: data.value?.device_code, config })
     if (res.code === 200) {
       editing.value = false
       level.value = 'state'
-      await load()
+      // 状态分组变了，缓存的结果已被后端整体失效——让父组件强制重算这个类型，
+      // 不再是自己单独发一次请求
+      emit('reload')
     } else {
       editErr.value = res.msg || '保存失败'
     }
@@ -728,11 +712,34 @@ async function saveConfig() {
   }
 }
 
+// stageResult 变化(选了不同班次/天，或强制重算回来了新结果)时重新初始化选择项并重画
+watch(() => props.stageResult, (val) => {
+  if (!val || val.source === 'loading' || val.source === 'error') return
+  if (level.value === 'state' && !(val.states?.length)) level.value = 'stage'
+  selectedParams.value = (val.params || []).map(p => p.p_name).slice(0, Math.min(4, (val.params || []).length))
+  const first = rows.value[0]
+  selectedUnit.value = first ? rowId(first) : null
+  nextTick(() => {
+    renderGantt()
+    renderCompare()
+    renderCycleDurChart()
+    renderCycleValueChart()
+  })
+}, { immediate: true })
+
 watch(metric, () => {
   renderCycleValueChart()
   renderCompare()
 })
-watch(() => props.deviceCode, () => { data.value = null; load() })
+
+// selectedUnit/level 变化 → focus 自动重算(computed) → 这里负责把新数据画出来
+watch(focus, () => {
+  nextTick(() => {
+    renderCycleDurChart()
+    renderCycleValueChart()
+    renderCompare()
+  })
+})
 
 function onResize() {
   if (cmpChart && !cmpChart.isDisposed()) cmpChart.resize()
@@ -743,7 +750,6 @@ function onResize() {
 
 onMounted(() => {
   window.addEventListener('resize', onResize)
-  if (props.deviceCode) load()
 })
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)

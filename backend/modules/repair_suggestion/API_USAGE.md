@@ -75,7 +75,7 @@ curl -X POST "http://localhost:8000/api/repair-suggestion" \
   "conclusion": "",
   "context": "",
   "error_code": 1,
-  "error_message": "DeepSeek调用失败: 500"
+  "error_message": "LLM调用失败: 500"
 }
 ```
 
@@ -250,7 +250,7 @@ curl -X POST "http://localhost:8000/api/task-suggestion" \
   "conclusion": "",
   "context": "",
   "error_code": 1,
-  "error_message": "DeepSeek调用失败: 500"
+  "error_message": "LLM调用失败: 500"
 }
 ```
 

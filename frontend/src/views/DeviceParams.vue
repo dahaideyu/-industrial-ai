@@ -102,22 +102,59 @@
             :class="chartMode === 'overlay' ? 'text-gray-700 font-bold' : 'text-gray-400 hover:text-gray-600'">叠加</button>
         </template>
       </div>
-      <template v-if="activeStep === 1">
-      <!-- 快捷时间范围 -->
-      <div class="flex flex-wrap items-center gap-1.5 mt-3">
-        <span class="text-xs text-gray-400 mr-1">快捷范围:</span>
-        <button
-          v-for="r in QUICK_RANGES" :key="r.key"
-          @click="applyQuickRange(r)"
-          class="px-2.5 py-1 rounded-full text-xs border transition-all"
-          :class="activeQuickRange === r.key
-            ? 'bg-amber-400 text-white border-amber-400'
-            : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'"
-        >{{ r.label }}</button>
-        <span v-if="activeQuickRange === 'custom'" class="text-xs text-gray-400 ml-1">自定义范围</span>
-        <span v-if="rangeWarning" class="text-xs text-amber-600 ml-2">⚠ {{ rangeWarning }}</span>
-      </div>
+      <template v-if="activeStep === 1 && rangeWarning">
+        <span class="text-xs text-amber-600 ml-2">⚠ {{ rangeWarning }}</span>
       </template>
+    </div>
+
+    <!-- 分析单位选择：班次(白班06-18 / 晚班18-06)与天(06:00~次日06:00)都是一等分析单位，
+         结果都按整体(①状态&效率②能耗③KPI④阶段 四个Tab一起)落库缓存，选哪个块就整体展示哪个的结果。
+         已分析过的直接读库；进行中的标"进行中"，后端拒绝分析(数据未定型)。 -->
+    <div v-if="selectedDevice && (shiftList.length || dayList.length)" class="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 mb-4">
+      <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">
+          分析单位 — 班次/天二选一，点选后四个 Tab 整体切换到该单位的结果
+        </span>
+        <div class="flex items-center gap-2">
+          <span v-if="currentShiftMeta?.cacheInfo" class="text-[11px] text-gray-400">{{ currentShiftMeta.cacheInfo }}</span>
+          <button @click="reanalyzeShift" :disabled="shiftAnalyzing"
+                  class="px-2.5 py-1 text-xs rounded-lg border border-indigo-200 text-indigo-600 hover:bg-indigo-50 disabled:opacity-50">
+            {{ shiftAnalyzing ? '分析中…' : '🤖 重新分析' }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="shiftList.length" class="mb-2">
+        <div class="text-[10px] text-gray-400 mb-1">班次 — 共 {{ shiftList.length }} 个</div>
+        <div class="flex gap-1.5 overflow-x-auto pb-1">
+          <button v-for="s in shiftList" :key="s.key" @click="selectShift(s.key)"
+                  class="shrink-0 px-2.5 py-1.5 rounded-lg text-xs border transition-colors"
+                  :class="s.key === selectedShiftKey
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'">
+            {{ s.label }}
+            <span v-if="!s.closed" class="ml-1 text-[10px]" :class="s.key === selectedShiftKey ? 'text-indigo-100' : 'text-amber-500'">进行中</span>
+            <span v-else-if="s.partial" class="ml-1 text-[10px]" :class="s.key === selectedShiftKey ? 'text-indigo-100' : 'text-gray-400'">不完整</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="dayList.length">
+        <div class="text-[10px] text-gray-400 mb-1">天(06:00~次日06:00) — 共 {{ dayList.length }} 个</div>
+        <div class="flex gap-1.5 overflow-x-auto pb-1">
+          <button v-for="d in dayList" :key="d.key" @click="selectShift(d.key)"
+                  class="shrink-0 px-2.5 py-1.5 rounded-lg text-xs border transition-colors"
+                  :class="d.key === selectedShiftKey
+                    ? 'bg-teal-600 text-white border-teal-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'">
+            {{ d.label }}
+            <span v-if="!d.closed" class="ml-1 text-[10px]" :class="d.key === selectedShiftKey ? 'text-teal-100' : 'text-amber-500'">进行中</span>
+            <span v-else-if="d.partial" class="ml-1 text-[10px]" :class="d.key === selectedShiftKey ? 'text-teal-100' : 'text-gray-400'">不完整</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="currentShiftMeta?.note" class="mt-2 text-[11px] text-amber-600">⚠ {{ currentShiftMeta.note }}</div>
     </div>
 
     <div v-if="!selectedDevice" class="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100 shadow-sm">
@@ -127,52 +164,7 @@
 
     <!-- ① 状态：设备状态划分 + 原始参数曲线 -->
     <div v-else-if="activeStep === 1" class="space-y-6">
-      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">
-            ① 状态划分<span v-if="pulseParam"> — 基于脉搏 {{ displayNames[pulseParam] || pulseParam }}</span>
-          </span>
-          <div class="flex items-center gap-2 text-xs text-gray-500">
-            分析天数：
-            <button v-for="d in [1,3,7,30]" :key="d" @click="stateDays = d; startStateAnalysis()"
-              class="px-2 py-0.5 rounded" :class="stateDays === d ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-100'">{{ d }}天</button>
-          </div>
-        </div>
-        <div v-if="!stateResult" class="text-center py-8 text-gray-400 text-sm">点上方「分析天数」开始状态划分</div>
-        <div v-else-if="stateResult.source === 'loading'" class="text-center py-12 text-gray-400">⏳ 分析中...</div>
-        <div v-else-if="stateResult.source === 'error'" class="text-center py-12 text-gray-400">{{ stateResult.msg }}</div>
-        <template v-else>
-          <div class="space-y-3">
-            <div v-if="stateResult.truncate_note" class="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-700">
-              ⚠ {{ stateResult.truncate_note }}
-            </div>
-            <!-- 状态切片图：运行/非运行/离线 按时间轴铺开 -->
-            <div v-if="stateResult.timeline?.length" class="border border-gray-100 rounded-lg p-3">
-              <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
-                <span class="text-xs font-bold text-gray-500">状态切片（按时间轴）</span>
-                <div class="flex items-center gap-3 text-[11px] text-gray-500">
-                  <span class="flex items-center gap-1"><i class="inline-block w-3 h-2 rounded-sm" style="background:#22c55e"></i>运行 {{ stateResult.timeline_totals?.running_h }}h</span>
-                  <span class="flex items-center gap-1"><i class="inline-block w-3 h-2 rounded-sm" style="background:#f59e0b"></i>非运行 {{ stateResult.timeline_totals?.idle_h }}h</span>
-                  <span class="flex items-center gap-1"><i class="inline-block w-3 h-2 rounded-sm" style="background:#d1d5db"></i>离线 {{ stateResult.timeline_totals?.offline_h }}h</span>
-                </div>
-              </div>
-              <div ref="stateTimelineEl" class="w-full" style="height: 200px"></div>
-              <p class="text-[10px] text-gray-400 mt-1">
-                共 {{ stateResult.timeline_totals?.segments }} 段。离线＝脉搏参数连续 {{ stateResult.timeline_gap_minutes }} 分钟以上没有上报（数据断档），
-                与上方卡片按“总时长−运行−非运行”反推的离线时长口径不同，故两处数值可能有差异。
-              </p>
-            </div>
-              <div class="grid grid-cols-3 gap-3 text-center">
-                <div class="bg-green-50 rounded-lg p-3"><div class="text-green-700 font-bold text-lg">{{ stateResult.running_hours }}h</div><div class="text-green-600 text-xs">🏠 运行（房子里）</div></div>
-                <div class="bg-amber-50 rounded-lg p-3"><div class="text-amber-700 font-bold text-lg">{{ stateResult.idle_hours }}h</div><div class="text-amber-600 text-xs">🌿 非运行（草坪上）</div></div>
-                <div class="bg-gray-100 rounded-lg p-3"><div class="text-gray-700 font-bold text-lg">{{ stateResult.offline_hours }}h</div><div class="text-gray-500 text-xs">💤 离线</div></div>
-              </div>
-              <div v-if="stateResult.ai_insight" class="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700 leading-relaxed">
-                💡 AI 洞察：{{ stateResult.ai_insight }}
-              </div>
-          </div>
-        </template>
-      </div>
+      <StateCard ref="stateCardRef" :state-result="stateResult" :pulse-param-display="pulseParam ? (displayNames[pulseParam] || pulseParam) : ''" />
 
       <!-- 原始参数曲线 -->
       <div v-if="loading" class="text-center py-16 text-gray-400">
@@ -321,252 +313,37 @@
 
         <div ref="chartContainer" class="w-full" :style="{ height: chartHeight }"></div>
       </div>
+
+      <!-- 效率（与状态同一数据源：资产利用率 vs 设备运转率）-->
+      <EfficiencyCard :state-result="stateResult" />
     </div>
 
-    <!-- ② 效率：资产利用率 vs 设备可用率 -->
+    <!-- ② 能耗：按房子(合膏生产周期)列每房子能耗，拆解房内各阶段能耗 -->
     <div v-else-if="activeStep === 2" class="space-y-6">
-      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">② 效率 — 资产利用率（老板视角） vs 设备可用率（班长视角）</span>
-          <div class="flex items-center gap-2 text-xs text-gray-500">
-            分析天数：
-            <button v-for="d in [1,3,7,30]" :key="d" @click="stateDays = d; startStateAnalysis()"
-              class="px-2 py-0.5 rounded" :class="stateDays === d ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-100'">{{ d }}天</button>
-          </div>
-        </div>
-        <div v-if="!stateResult" class="text-center py-8 text-gray-400 text-sm">点上方「分析天数」开始计算</div>
-        <div v-else-if="stateResult.source === 'loading'" class="text-center py-12 text-gray-400">⏳ 分析中...</div>
-        <div v-else-if="stateResult.source === 'error'" class="text-center py-12 text-gray-400">{{ stateResult.msg }}</div>
-        <template v-else>
-          <div class="space-y-3">
-            <div v-if="stateResult.truncate_note" class="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-700">
-              ⚠ {{ stateResult.truncate_note }}
-            </div>
-              <div class="grid grid-cols-2 gap-3 text-center">
-                <div class="bg-indigo-50 rounded-lg p-3">
-                  <div class="text-indigo-700 font-bold text-xl">{{ stateResult.utilization }}%</div>
-                  <div class="text-indigo-600 text-xs">🏢 资产利用率（老板视角）</div>
-                  <div class="text-gray-400 text-[10px]">运行 / {{ stateResult.total_hours }}h × 100%</div>
-                </div>
-                <div class="bg-emerald-50 rounded-lg p-3">
-                  <div class="text-emerald-700 font-bold text-xl">{{ stateResult.availability }}%</div>
-                  <div class="text-emerald-600 text-xs">🔧 设备可用率（班长视角）</div>
-                  <div class="text-gray-400 text-[10px]">(运行+非运行) / {{ stateResult.total_hours }}h × 100%</div>
-                </div>
-              </div>
-              <div v-if="stateResult.daily_breakdown?.length" class="border rounded-lg">
-                <div class="px-3 py-2 bg-gray-50 text-xs font-bold text-gray-500 border-b">每日明细（点击展开）</div>
-                <div v-for="d in stateResult.daily_breakdown" :key="d.date"
-                  class="px-3 py-1.5 border-b border-gray-50 text-xs flex items-center gap-3 cursor-pointer hover:bg-gray-50"
-                  @click="d._open = !d._open">
-                  <span class="w-20">{{ d.date.slice(5) }}</span>
-                  <span class="text-green-600 w-12 text-right">{{ d.running_h }}h</span>
-                  <span class="text-amber-600 w-12 text-right">{{ d.idle_h }}h</span>
-                  <span class="text-gray-400 w-12 text-right">{{ d.offline_h }}h</span>
-                  <span class="font-bold w-12 text-right">{{ d.utilization }}%</span>
-                  <span class="text-gray-400">{{ d.segments }}次切换</span>
-                </div>
-              </div>
-          </div>
-        </template>
-      </div>
+      <!-- 日期范围跨度 > 1 天时，先看按天(06:00~次日06:00)独立掐头去尾的多日汇总 -->
+      <EnergyDayTrend v-if="isMultiDayRange" :result="dayTrendResult" :loading="dayTrendLoading" />
+      <EnergyBreakdown ref="energyBreakdownRef" :energy-result="energyResult" />
     </div>
 
     <!-- ③ KPI：产量/OEE/节拍/能耗 -->
-    <div v-else-if="activeStep === 3" class="space-y-6">
-      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">③ KPI — 产量 / OEE / 节拍 / 能耗</span>
-          <div class="flex items-center gap-2 text-xs text-gray-500">
-            分析天数：
-            <button v-for="d in [1,3,7,30]" :key="d" @click="kpiDays = d; startKpiAnalysis()"
-              class="px-2 py-0.5 rounded" :class="kpiDays === d ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-100'">{{ d }}天</button>
-          </div>
-        </div>
-        <div v-if="!kpiResult" class="text-center py-8 text-gray-400 text-sm">点上方「分析天数」开始计算 KPI</div>
-        <div v-else class="space-y-3">
-            <div v-if="kpiResult.source === 'loading'" class="text-center py-12 text-gray-400">⏳ 计算中...</div>
-            <div v-else-if="kpiResult.source === 'error'" class="text-center py-12 text-gray-400">{{ kpiResult.msg }}</div>
-            <template v-else>
-              <div v-if="kpiCards.length > 1" class="text-xs text-gray-500 text-center">
-                按"房子形状"识别出 {{ kpiCards.length - 1 }} 种产品型号，最后一张是设备整体汇总
-              </div>
-              <div v-if="kpiResult.type_insight" class="bg-amber-50 rounded-lg p-3 text-xs text-amber-800 leading-relaxed">
-                🔍 型号划分判断：{{ kpiResult.type_insight }}
-              </div>
-
-              <div v-for="kpi in kpiCards" :key="kpi.type_label" class="border border-gray-100 rounded-lg p-3 space-y-3">
-                <div class="text-sm font-bold text-gray-700">
-                  {{ kpi.type_label }}
-                  <span v-if="kpi.batch_count != null" class="text-xs font-normal text-gray-400">（{{ kpi.batch_count }}个循环）</span>
-                </div>
-                <div v-if="kpi.signature" class="text-[10px] text-gray-400">特征：{{ kpi.signature }}</div>
-
-                <div class="grid grid-cols-3 gap-3 text-center">
-                  <div class="bg-sky-50 rounded-lg p-3">
-                    <div class="text-sky-700 font-bold text-lg">{{ kpi.total_cycles }}</div>
-                    <div class="text-sky-600 text-xs">总循环数（房子）</div>
-                  </div>
-                  <div class="bg-green-50 rounded-lg p-3">
-                    <div class="text-green-700 font-bold text-lg">{{ kpi.output_count }}</div>
-                    <div class="text-green-600 text-xs">产量（已剔除空跑{{ kpi.empty_run_count }}次）</div>
-                  </div>
-                  <div class="bg-violet-50 rounded-lg p-3">
-                    <div class="text-violet-700 font-bold text-lg">{{ kpi.pass_rate != null ? kpi.pass_rate + '%' : '—' }}</div>
-                    <div class="text-violet-600 text-xs">合格率<span v-if="kpi.quality_status !== 'ok'">（{{ kpi.quality_status === 'no_confirmed_spec' ? '暂无已确认规格限' : kpi.quality_status }}）</span></div>
-                  </div>
-                </div>
-
-                <div class="bg-gray-50 rounded-lg p-3">
-                  <div class="text-xs text-gray-500 mb-2">OEE = 可用率 × 性能效率 × 合格率</div>
-                  <div class="flex items-center justify-center gap-2 text-sm">
-                    <span class="text-emerald-700 font-medium">{{ kpi.availability != null ? kpi.availability + '%' : '—' }}</span>
-                    <span class="text-gray-300">×</span>
-                    <span class="text-amber-700 font-medium">{{ kpi.performance != null ? kpi.performance : '—' }}</span>
-                    <span class="text-gray-300">×</span>
-                    <span class="text-violet-700 font-medium">{{ kpi.pass_rate != null ? (kpi.pass_rate / 100).toFixed(2) : '—' }}</span>
-                    <span class="text-gray-300">=</span>
-                    <span class="text-gray-900 font-bold text-lg">{{ kpi.oee != null ? kpi.oee + '%' : '—' }}</span>
-                  </div>
-                  <div v-if="kpi.oee_note" class="text-center text-[10px] text-gray-400 mt-1">{{ kpi.oee_note }}</div>
-                  <div class="text-center text-[10px] text-gray-400 mt-1">性能效率 = P10最快批次节拍 / 实际平均节拍（近似值，非工艺标准节拍）</div>
-                </div>
-
-                <div class="grid grid-cols-2 gap-3">
-                  <div class="bg-white border border-gray-100 rounded-lg p-3">
-                    <div class="text-xs text-gray-500 mb-1">节拍（有效批次）</div>
-                    <div class="text-xs text-gray-700">均值 {{ kpi.cycle_time.mean_min ?? '—' }} 分钟</div>
-                    <div class="text-xs text-gray-700">中位 {{ kpi.cycle_time.median_min ?? '—' }} 分钟</div>
-                    <div class="text-xs text-gray-700">P10 {{ kpi.cycle_time.p10_min ?? '—' }} 分钟</div>
-                  </div>
-                  <div class="bg-white border border-gray-100 rounded-lg p-3">
-                    <div class="text-xs text-gray-500 mb-1">能耗</div>
-                    <div class="text-xs text-gray-700">有效 {{ kpi.energy.valid_kwh }}</div>
-                    <div class="text-xs text-gray-700">空跑 {{ kpi.energy.empty_run_kwh }}</div>
-                    <div class="text-xs text-gray-700">单件 {{ kpi.energy.per_unit_kwh ?? '—' }}</div>
-                  </div>
-                </div>
-
-                <div v-if="kpi.empty_run_status !== 'ok'" class="text-[10px] text-gray-400 text-center">
-                  空跑判定：{{ kpi.empty_run_status === 'no_weight_param' ? '该设备没有已识别的重量类参数，本次未剔除空跑（产量=总循环数）' : kpi.empty_run_status }}
-                </div>
-
-                <div v-if="kpi.ai_insight" class="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-800 leading-relaxed">
-                  💡 {{ kpi.ai_insight }}
-                </div>
-              </div>
-            </template>
-        </div>
-      </div>
-    </div>
+    <KpiPanel v-else-if="activeStep === 3" :kpi-result="kpiResult" :device-code="selectedDevice"
+              @reload="loadShiftAnalysis(true, ['kpi'])" />
 
     <!-- ④ 阶段：阶段分析 + CPK/公差/能耗逐段 -->
     <div v-else-if="activeStep === 4" class="space-y-6">
-      <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">④ 阶段 — CPK / 公差 / 能耗逐段分析</span>
-          <div class="flex items-center gap-2 text-xs text-gray-500">
-            分析天数：
-            <button v-for="d in [3,7,15,30]" :key="d" @click="stageCpkDays = d; startStageCpkAnalysis()"
-              class="px-2 py-0.5 rounded" :class="stageCpkDays === d ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-100'">{{ d }}天</button>
-          </div>
-        </div>
-        <div v-if="!stageCpkResult" class="text-center py-8 text-gray-400 text-sm">点上方「分析天数」开始逐段 CPK 分析</div>
-        <div v-else class="space-y-3">
-            <div v-if="stageCpkResult.source === 'loading'" class="text-center py-12 text-gray-400">⏳ 计算中...</div>
-            <div v-else-if="stageCpkResult.source === 'error'" class="text-center py-12 text-gray-400">{{ stageCpkResult.msg }}</div>
-            <template v-else>
-              <div v-for="s in stageCpkResult.stages" :key="s.stage" class="border border-gray-100 rounded-lg p-3">
-                <div class="text-xs font-bold text-gray-700 mb-2">阶段 {{ s.stage }}</div>
+      <StageCpkPanel :stage-cpk-result="stageCpkResult" />
 
-                <div class="text-xs text-gray-600 mb-1" v-if="s.duration_cpk">
-                  <template v-if="s.duration_cpk.cpk != null">
-                    时长：{{ s.duration_cpk.mean_min }}±{{ s.duration_cpk.std_min }}分钟，
-                    规格[{{ s.duration_cpk.spec_low_min }}, {{ s.duration_cpk.spec_high_min }}]，
-                    CPK={{ s.duration_cpk.cpk }}，超差 {{ s.duration_cpk.out_of_spec_count }}/{{ s.duration_cpk.n }}
-                    ({{ s.duration_cpk.out_of_spec_ratio }}%)
-                  </template>
-                  <template v-else>时长：{{ s.duration_cpk.note }}</template>
-                </div>
-
-                <div v-if="Object.keys(s.param_stats || {}).length" class="text-xs text-gray-500 space-y-0.5 mb-1">
-                  <div v-for="(stat, pname) in s.param_stats" :key="pname">
-                    {{ stat.display_name }}：均值 {{ stat.mean }}{{ stat.unit }} (±{{ stat.std }})
-                    <span v-if="stat.cpk != null">，规格[{{ stat.spec_low }}, {{ stat.spec_high }}]，CPK={{ stat.cpk }}</span>
-                  </div>
-                </div>
-
-                <div v-if="s.energy_avg != null" class="text-xs text-gray-500 mb-1">阶段平均能耗：{{ s.energy_avg }}</div>
-
-                <div v-if="s.ai_insight" class="text-xs text-indigo-700 bg-indigo-50 rounded p-2 mt-1">💡 {{ s.ai_insight }}</div>
-              </div>
-            </template>
-        </div>
-      </div>
-
-      <!-- 阶段分析（独立组件，自行加载数据）-->
-      <StageAnalysis :key="selectedDevice" :device-code="selectedDevice" />
+      <!-- 阶段配方/周期排列/跨周期对比：跟其它3个Tab一样吃选中班次/天的缓存结果 -->
+      <StageAnalysis :stage-result="stageAnalysisResult"
+                     @reload="loadShiftAnalysis(true, ['stage_recipe'])" />
     </div>
     <!-- AI Analysis History（所有 tab 可见）-->
-    <div v-if="showAnalysisLog" id="analysis-history-section" class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="font-headline text-base font-semibold text-gray-900">历史 AI 分析</h2>
-        <span class="text-xs text-gray-400">{{ analysisLogLoading ? '加载中...' : `共 ${analysisLogItems.length} 条` }}</span>
-      </div>
-      <div v-if="!analysisLogLoading && analysisLogItems.length === 0" class="text-xs text-gray-400">
-        暂无历史分析记录，点击"AI 分析"生成第一条。
-      </div>
-      <ul v-else class="divide-y divide-gray-100">
-        <li v-for="item in analysisLogItems" :key="item.id"
-          class="py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-gray-50 rounded-lg px-2"
-          @click="viewAnalysisLogItem(item)"
-        >
-          <div class="min-w-0">
-            <div class="text-sm text-gray-800 truncate">{{ item.start_time }} ~ {{ item.end_time }}</div>
-            <div class="text-xs text-gray-400">{{ item.created_at }}{{ item.running_only ? ' · 仅运行时段' : '' }}</div>
-          </div>
-          <span class="text-xs text-violet-500 shrink-0">查看 →</span>
-        </li>
-      </ul>
-    </div>
+    <AiAnalysisLog :visible="showAnalysisLog" :loading="analysisLogLoading" :items="analysisLogItems" @select="viewAnalysisLogItem" />
     <!-- AI Analysis Modal -->
-    <Teleport to="body">
-      <div v-if="analysisResult || analysisError" class="fixed inset-0 z-50 flex items-center justify-center p-4" @click.self="analysisResult = ''; analysisResultMeta = ''; analysisError = ''">
-        <div class="absolute inset-0 bg-black/40"></div>
-        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
-          <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-            <h2 class="text-lg font-bold text-gray-900">
-              {{ analysisError ? '分析失败' : 'AI 分析结果' }}
-              <span v-if="analysisResultMeta" class="ml-2 text-xs font-normal text-gray-400">{{ analysisResultMeta }}</span>
-            </h2>
-            <button
-              @click="analysisResult = ''; analysisResultMeta = ''; analysisError = ''"
-              class="text-gray-400 hover:text-gray-600 text-xl leading-none px-2"
-            >✕</button>
-          </div>
-          <div class="overflow-y-auto px-6 py-4 flex-1">
-            <div v-if="analysisError" class="text-red-600 text-sm">{{ analysisError }}</div>
-            <div v-else class="prose prose-sm max-w-none text-gray-700 leading-relaxed" v-html="analysisResultHtml"></div>
-          </div>
-          <div class="flex items-center justify-between px-6 py-3 border-t border-gray-100 shrink-0">
-            <div class="flex items-center gap-2 text-xs text-gray-400">
-              <template v-if="!analysisError">
-                分析时间：{{ startTime }} ~ {{ endTime }}
-                <span v-if="analyzeRunningOnly" class="text-green-500">· 仅运行时段</span>
-              </template>
-            </div>
-            <div class="flex items-center gap-2">
-              <button @click="startAnalysis()" :disabled="analyzing"
-                class="px-4 py-2 text-sm bg-violet-500 text-white rounded-lg hover:bg-violet-600 disabled:opacity-50">
-                {{ analyzing ? '分析中...' : '重新分析' }}
-              </button>
-              <button @click="analysisResult = ''; analysisResultMeta = ''; analysisError = ''"
-                class="px-4 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">关闭</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <AiAnalysisModal :result="analysisResult" :meta="analysisResultMeta" :error="analysisError"
+      :html="analysisResultHtml" :analyzing="analyzing" :start-time="startTime" :end-time="endTime"
+      :analyze-running-only="analyzeRunningOnly" @close="analysisResult = ''; analysisResultMeta = ''; analysisError = ''"
+      @reanalyze="startAnalysis()" />
   </div>
 </template>
 
@@ -585,9 +362,19 @@ import {
   getDeviceParamPoints,
 } from '../api/client.js'
 import StageAnalysis from './StageAnalysis.vue'
+import AiAnalysisModal from './device_params/AiAnalysisModal.vue'
+import AiAnalysisLog from './device_params/AiAnalysisLog.vue'
+import EnergyBreakdown from './device_params/EnergyBreakdown.vue'
+import EnergyDayTrend from './device_params/EnergyDayTrend.vue'
+import KpiPanel from './device_params/KpiPanel.vue'
+import StageCpkPanel from './device_params/StageCpkPanel.vue'
+import StateCard from './device_params/StateCard.vue'
+import EfficiencyCard from './device_params/EfficiencyCard.vue'
 import { marked } from 'marked'
 
 const route = useRoute()
+const energyBreakdownRef = ref(null)
+const stateCardRef = ref(null)
 const devices = ref([])
 const selectedDevice = ref('')
 const loading = ref(false)
@@ -609,213 +396,63 @@ const analysisLogItems = ref([])
 const workflowStep = ref(0)
 const pulseParam = ref('')
 const stateResult = ref(null)
-const stateDays = ref(7)
 const kpiResult = ref(null)
-const kpiDays = ref(1)
-// 识别出≥2种型号时，逐型号卡片 + 末尾追加"整体"汇总卡片；只有一种型号时只显示整体卡片
-const kpiCards = computed(() => {
-  const r = kpiResult.value
-  if (!r || r.source) return []
-  if (r.product_types && r.product_types.length >= 2) return [...r.product_types, r.overall]
-  return r.overall ? [r.overall] : []
-})
-// ── 状态切片图（运行/非运行/离线 时间轴）──
-const stateTimelineEl = ref(null)
-let stateTimelineChart = null
-const STATE_META = {
-  running: { name: '运行', color: '#22c55e' },
-  idle: { name: '非运行', color: '#f59e0b' },
-  offline: { name: '离线', color: '#d1d5db' },
-}
-// 阶段颜色（用于合膏机等有Tec_Stage参数的设备），不同阶段用不同色调
-const STAGE_COLORS = [
-  '#22c55e', '#16a34a', '#15803d', '#14532d',  // green shades
-  '#3b82f6', '#2563eb', '#1d4ed8',              // blue shades
-  '#8b5cf6', '#7c3aed', '#6d28d9',              // purple shades
-  '#ec4899', '#db2777', '#be185d',              // pink shades
-  '#f59e0b', '#d97706', '#b45309',              // amber shades
-]
-
-function getStageColor(stage) {
-  if (stage == null) return undefined
-  const s = Math.round(Number(stage))
-  if (isNaN(s)) return undefined
-  return STAGE_COLORS[s % STAGE_COLORS.length]
-}
-
-function getStageName(stage) {
-  if (stage == null) return ''
-  const s = Math.round(Number(stage))
-  if (isNaN(s)) return ''
-  if (s === 0) return '待机'
-  return `阶段${s}`
-}
-
-function disposeStateTimeline() {
-  if (stateTimelineChart && !stateTimelineChart.isDisposed()) stateTimelineChart.dispose()
-  stateTimelineChart = null
-}
-
-function renderStateTimeline() {
-  const tl = stateResult.value?.timeline
-  if (!stateTimelineEl.value) return
-  if (!tl || tl.length === 0) return
-  if (!stateTimelineChart || stateTimelineChart.isDisposed()) {
-    stateTimelineChart = echarts.init(stateTimelineEl.value)
-  }
-
-  const runningSegs = stateResult.value?.running_segments
-
-  // 判断是否有阶段数据（运行段中有 stage 字段）
-  let hasStages = false
-  const stageSet = new Set()
-  if (runningSegs && runningSegs.length > 0) {
-    for (const rs of runningSegs) {
-      if (rs.stage != null) {
-        hasStages = true
-        stageSet.add(Math.round(Number(rs.stage)))
-      }
-    }
-  }
-
-  // 为每个 timeline 段匹配 running_segments 中的 stage（用于运行段着色和 tooltip）
-  const stageBySeg = new Map()
-  if (hasStages) {
-    for (const seg of tl) {
-      if (seg.state !== 'running') continue
-      const segStart = parseTime(seg.start)
-      const segEnd = parseTime(seg.end)
-      if (segStart == null || segEnd == null) continue
-      let bestStage = null
-      let bestOverlap = 0
-      for (const rs of runningSegs) {
-        const rsStart = parseTime(rs.start)
-        const rsEnd = parseTime(rs.end)
-        if (rsStart == null || rsEnd == null) continue
-        const overlap = Math.min(segEnd, rsEnd) - Math.max(segStart, rsStart)
-        if (overlap > bestOverlap) {
-          bestOverlap = overlap
-          bestStage = rs.stage
-        }
-      }
-      const key = `${seg.start}_${seg.end}`
-      stageBySeg.set(key, bestStage)
-    }
-  }
-
-  // 三行：离线(0)、非运行(1)、运行(2)
-  const categories = ['离线', '非运行', '运行']
-  const stateToRow = { offline: 0, idle: 1, running: 2 }
-
-  const data = tl.map((seg, idx) => {
-    const s = parseTime(seg.start)
-    const e = parseTime(seg.end)
-    const row = stateToRow[seg.state] ?? 0
-    const key = `${seg.start}_${seg.end}`
-    const stage = stageBySeg.get(key)
-    const baseColor = STATE_META[seg.state]?.color || '#d1d5db'
-    const color = seg.state === 'running' && stage != null
-      ? (getStageColor(stage) || baseColor)
-      : baseColor
-    return {
-      value: [row, s, e, e - s],
-      itemStyle: { color, borderRadius: seg.state === 'running' ? 2 : 0 },
-      state: seg.state,
-      hours: seg.hours,
-      stage: stage,
-    }
-  })
-
-  stateTimelineChart.setOption({
-    animation: false,
-    grid: { left: 70, right: 20, top: hasStages ? 22 : 8, bottom: 52 },
-    tooltip: {
-      confine: true,
-      trigger: 'item',
-      formatter: (p) => {
-        if (!p.data || !p.data.value) return ''
-        const meta = STATE_META[p.data.state] || {}
-        const fmt = (t) => new Date(t).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-        let stageInfo = ''
-        if (p.data.stage != null) {
-          stageInfo = `<br/>合膏阶段: ${getStageName(p.data.stage)}`
-        }
-        return `<b>${meta.name || p.data.state}</b>${stageInfo}<br/>${fmt(p.value[1])} ~ ${fmt(p.value[2])}<br/>时长 ${p.data.hours} 小时`
-      },
-    },
-    xAxis: {
-      type: 'time',
-      axisLabel: { fontSize: 11, color: '#6b7280', hideOverlap: true },
-      axisLine: { lineStyle: { color: '#d1d5db' } },
-      splitLine: { show: true, lineStyle: { color: '#f3f4f6', type: 'dashed' } },
-    },
-    yAxis: {
-      type: 'category',
-      data: categories,
-      axisTick: { show: false },
-      axisLine: { show: false },
-      axisLabel: { fontSize: 12, color: '#374151', fontWeight: 500 },
-      inverse: true,
-    },
-    dataZoom: [
-      { type: 'slider', height: 16, bottom: 8, xAxisIndex: 0 },
-      { type: 'inside', xAxisIndex: 0 },
-    ],
-    series: [{
-      type: 'custom',
-      renderItem: (params, api) => {
-        const rowIdx = api.value(0)
-        const startPt = api.coord([api.value(1), rowIdx])
-        const endPt = api.coord([api.value(2), rowIdx])
-        const rowHeight = api.size([0, 1])[1] * 0.65
-        const y = startPt[1] - rowHeight / 2
-        const rect = echarts.graphic.clipRectByRect(
-          { x: startPt[0], y: y, width: Math.max(endPt[0] - startPt[0], 1), height: rowHeight },
-          { x: params.coordSys.x, y: params.coordSys.y, width: params.coordSys.width, height: params.coordSys.height },
-        )
-        if (!rect) return null
-        // 短段时间标注
-        const el = { type: 'rect', shape: rect, style: api.style() }
-        const durHours = api.value(3)
-        const shouldLabel = durHours != null && durHours < 1 && endPt[0] - startPt[0] > 40
-        if (shouldLabel) {
-          return {
-            type: 'group',
-            children: [
-              el,
-              { type: 'text', x: startPt[0] + 4, y: y + rowHeight / 2, style: { text: `${(durHours * 60).toFixed(0)}min`, fill: '#6b7280', fontSize: 9, fontFamily: 'sans-serif', textVerticalAlign: 'middle' } }
-            ],
-          }
-        }
-        return el
-      },
-      encode: { x: [1, 2], y: 0 },
-      data,
-    }],
-    // 阶段图例（左上角小色块）
-    graphic: hasStages ? [
-      { type: 'text', left: 70, top: 2, style: { text: '阶段:', fill: '#9ca3af', fontSize: 10, fontFamily: 'sans-serif' } },
-      ...[...stageSet].sort((a, b) => a - b).map((s, i) => ({
-        type: 'group',
-        left: 100 + i * 52,
-        top: 4,
-        children: [
-          { type: 'rect', shape: { x: 0, y: 0, width: 10, height: 10 }, style: { fill: getStageColor(s) } },
-          { type: 'text', left: 14, top: 8, style: { text: getStageName(s), fill: '#6b7280', fontSize: 10, fontFamily: 'sans-serif' } },
-        ],
-      })),
-    ] : [],
-  }, true)
-  stateTimelineChart.resize()
-}
+// ── 状态切片图（运行/非运行/离线 时间轴）：渲染逻辑已提取到 StateCard.vue，
+// 父组件只在 tab 切换/数据重置的关键时机调用 ref 暴露的 render/dispose ──
 
 const stageCpkResult = ref(null)
-const stageCpkDays = ref(7)
+// ④阶段Tab里独立的"配方总览/周期排列/跨周期对比"组件用的结果，跟 stageCpkResult
+// (阶段CPK/公差/能耗逐段) 是两个不同的分析类型(stage_recipe vs stage)，分开存
+const stageAnalysisResult = ref(null)
+
+// ── ② 能耗 Tab ──
+// 能耗渲染逻辑已提取到 EnergyBreakdown.vue 组件；父组件只保留数据管线：
+// energyResult 由 API/班次分析写入，selectedEnergyPoints 用于检测勾选变化重拉。
+const ENERGY_POINTS = ['ene_eptotal', 'ene_imp']
+const energyResult = ref(null)
+let _lastEnergySel = ''
+const selectedEnergyPoints = computed(() => ENERGY_POINTS.filter(p => visibleKeys.value.includes(p)))
+
+// 多日汇总：日期范围跨度 > 1 天时，按天(06:00~次日06:00)读已存的天粒度能耗结果，
+// 而不是只看单个班次——天粒度独立掐头去尾，见 shift.py full_days_in_range()。
+const dayTrendResult = ref(null)
+const dayTrendLoading = ref(false)
+const isMultiDayRange = computed(() => rangeDays.value > 1)
+
+async function loadDayTrend() {
+  if (!selectedDevice.value || !pulseParam.value || !isMultiDayRange.value) {
+    dayTrendResult.value = null
+    return
+  }
+  dayTrendLoading.value = true
+  try {
+    const res = await client.post('/device-params/day-analysis', {
+      device_code: selectedDevice.value,
+      device_name: currentDeviceName(),
+      pulse_param: pulseParam.value,
+      start_time: formatForApi(startTime.value),
+      end_time: formatForApi(endTime.value),
+      analysis_types: ['energy'],
+      selected_points: selectedEnergyPoints.value,
+    }, { timeout: 0 })
+    dayTrendResult.value = (res.code === 200) ? res.data : null
+  } catch (e) {
+    dayTrendResult.value = null
+  } finally {
+    dayTrendLoading.value = false
+  }
+}
+
+const rangeDays = computed(() => {
+  const diffMs = new Date(endTime.value) - new Date(startTime.value)
+  return Math.max(1, Math.round(diffMs / 86400000))
+})
 
 // 四个 tab 对应四个分析步骤，内容直接内联展示（不再用弹窗）
+// ①状态&效率（同源数据）②能耗 ③KPI ④阶段
 const WORKFLOW_STEPS = [
-  { key: 'state', label: '①状态', desc: '数据驱动划分运行/待机/离线' },
-  { key: 'efficiency', label: '②效率', desc: '资产利用率(老板) vs 设备可用率(班长)' },
+  { key: 'state', label: '①状态&效率', desc: '运行/待机/离线划分 + 资产利用率 vs 设备运转率' },
+  { key: 'energy', label: '②能耗', desc: '按房子(生产周期)列每房子能耗，拆解房内各阶段能耗' },
   { key: 'kpi', label: '③KPI', desc: '产量/OEE/单件能耗/合格率' },
   { key: 'stage', label: '④阶段', desc: '按脉搏切段，CPK/公差/能耗逐段分析' },
 ]
@@ -940,36 +577,41 @@ function formatForApi(dtLocal) {
   return dtLocal.replace('T', ' ') + ':00'
 }
 
-// 时间范围：默认最近 24 小时；默认最大30天，通过dataZoom可拖拽查看历史数据
+// 按班次对齐：找到离给定时间最近的 06:00 或 18:00
+function nearestShiftBoundary(date) {
+  const candidates = []
+  for (const dayOffset of [-1, 0, 1]) {
+    for (const hour of [6, 18]) {
+      const d = new Date(date)
+      d.setDate(d.getDate() + dayOffset)
+      d.setHours(hour, 0, 0, 0)
+      candidates.push(d)
+    }
+  }
+  let closest = candidates[0]
+  let minDiff = Math.abs(date.getTime() - closest.getTime())
+  for (const c of candidates) {
+    const diff = Math.abs(date.getTime() - c.getTime())
+    if (diff < minDiff) {
+      minDiff = diff
+      closest = c
+    }
+  }
+  return closest
+}
+
+// 时间范围：默认最近 24 小时，且按班次对齐到最近的 06:00/18:00；默认最大30天，通过dataZoom可拖拽查看历史数据
 const MAX_RANGE_DAYS = 30
-const _initEnd = new Date()
+const _initEnd = nearestShiftBoundary(new Date())
 const _initStart = new Date(_initEnd.getTime() - 24 * 3600 * 1000)
 const startTime = ref(toDatetimeLocal(_initStart))
 const endTime = ref(toDatetimeLocal(_initEnd))
-const activeQuickRange = ref('24h')   // 当前选中的快捷范围（'custom' 表示手动）
 const rangeWarning = ref('')
 
-const QUICK_RANGES = [
-  { key: '24h', label: '最近24小时', hours: 24 },
-  { key: '3d',  label: '最近3天', hours: 72 },
-  { key: '7d',  label: '最近7天', hours: 168 },
-  { key: '30d', label: '最近30天', hours: 720 },
-]
 
-// 点快捷范围：以「当前时间」为终点回推，并立即查询
-function applyQuickRange(r) {
-  activeQuickRange.value = r.key
-  rangeWarning.value = ''
-  const end = new Date()
-  const start = new Date(end.getTime() - r.hours * 3600 * 1000)
-  startTime.value = toDatetimeLocal(start)
-  endTime.value = toDatetimeLocal(end)
-  if (selectedDevice.value) loadData()
-}
 
 // 手动改动输入框 → 标记为自定义
 function onRangeInputChange() {
-  activeQuickRange.value = 'custom'
   clampRangeWithin()
 }
 
@@ -1027,10 +669,18 @@ function onDeviceChange() {
   paramsMeta.value = {}
   alarmTypeFilter.value = []
   disposeChart()
-  disposeStateTimeline()
+  stateCardRef.value?.disposeStateTimeline()
   stateResult.value = null
   kpiResult.value = null
   stageCpkResult.value = null
+  stageAnalysisResult.value = null
+  energyResult.value = null
+  dayTrendResult.value = null
+  shiftList.value = []
+  dayList.value = []
+  selectedShiftKey.value = null
+  currentShiftMeta.value = null
+  energyBreakdownRef.value?.disposeEnergyCharts()
   if (_stateAbort) { _stateAbort.abort(); _stateAbort = null }
   _stateRequestId++
   if (selectedDevice.value) loadData()
@@ -1039,6 +689,156 @@ function onDeviceChange() {
 function currentDeviceName() {
   const d = devices.value.find(d => d.device_code === selectedDevice.value)
   return d ? d.device_name || d.device_code : selectedDevice.value
+}
+
+// ══════════════════════════════════════════════════════════
+// 班次：分析与缓存的基本单位（白班06-18 / 晚班18-06）
+// 一次请求拿回该班次的 4 类分析结果，各 Tab 只负责渲染。
+// 已结束的班次结果永久有效直接读库；进行中的班次每次是当下快照。
+// ══════════════════════════════════════════════════════════
+const shiftList = ref([])
+// 天(06:00~次日06:00)——与班次并列的另一个分析单位，同一套 parse_shift_key()/
+// analyze_one_shift() 通用逻辑，key 后缀是 "-full"，selectShift()/selectedShiftKey
+// 两种 key 通用，不用另外区分“当前选的是班次还是天”。
+const dayList = ref([])
+const selectedShiftKey = ref(null)
+const shiftAnalyzing = ref(false)
+const currentShiftMeta = ref(null)
+
+async function loadShifts() {
+  if (!selectedDevice.value) { shiftList.value = []; return }
+  try {
+    const r = await client.get('/device-params/shifts', {
+      params: { start_time: formatForApi(startTime.value), end_time: formatForApi(endTime.value) },
+    })
+    shiftList.value = (r.code === 200 && r.data?.shifts) ? r.data.shifts : []
+  } catch (e) {
+    shiftList.value = []
+    return
+  }
+  // 默认看最近的那个班次
+  const last = shiftList.value[shiftList.value.length - 1]
+  selectedShiftKey.value = last?.key ?? null
+  if (selectedShiftKey.value) await loadShiftAnalysis()
+}
+
+async function loadDayWindows() {
+  if (!selectedDevice.value) { dayList.value = []; return }
+  try {
+    const r = await client.get('/device-params/full-days', {
+      params: { start_time: formatForApi(startTime.value), end_time: formatForApi(endTime.value) },
+    })
+    dayList.value = (r.code === 200 && r.data?.days) ? r.data.days : []
+  } catch (e) {
+    dayList.value = []
+  }
+}
+
+function selectShift(key) {
+  if (key === selectedShiftKey.value) return
+  selectedShiftKey.value = key
+  loadShiftAnalysis()
+}
+
+function reanalyzeShift() {
+  return loadShiftAnalysis(true)
+}
+
+function _setAllResults(v) {
+  stateResult.value = v
+  energyResult.value = v
+  kpiResult.value = v
+  stageCpkResult.value = v
+  stageAnalysisResult.value = v
+}
+
+async function loadShiftAnalysis(force = false, types = null) {
+  if (!selectedDevice.value || !selectedShiftKey.value) return
+  if (!pulseParam.value) {
+    _setAllResults({ source: 'error', msg: '请先在「参数设定」页面中设置生产节拍(脉搏)参数' })
+    return
+  }
+  shiftAnalyzing.value = true
+  // 只重算部分类型时，其它 Tab 的已有结果保持不动
+  const _apply = (v) => {
+    if (!types) return _setAllResults(v)
+    if (types.includes('state')) stateResult.value = v
+    if (types.includes('energy')) energyResult.value = v
+    if (types.includes('kpi')) kpiResult.value = v
+    if (types.includes('stage')) stageCpkResult.value = v
+    if (types.includes('stage_recipe')) stageAnalysisResult.value = v
+  }
+  _apply({ source: 'loading' })
+
+  _lastEnergySel = selectedEnergyPoints.value.join(',')
+  try {
+    const res = await client.post('/device-params/shift-analysis', {
+      device_code: selectedDevice.value,
+      device_name: currentDeviceName(),
+      pulse_param: pulseParam.value,
+      shift_key: selectedShiftKey.value,
+      analysis_types: types,
+      selected_points: selectedEnergyPoints.value,
+      force,
+    }, { timeout: 0 })
+    if (res.code === 200 && res.data?.shifts?.length) {
+      applyShiftResult(res.data.shifts[0], types)
+    } else {
+      _apply({ source: 'error', msg: res.msg || '班次分析失败' })
+    }
+  } catch (e) {
+    _apply({ source: 'error', msg: e.response?.data?.msg || e.message })
+  } finally {
+    shiftAnalyzing.value = false
+  }
+}
+
+// 后端每类结果要么是正常数据、要么带 error 字段，这里统一成各 Tab 已有的
+// { source: 'error', msg } 约定，渲染逻辑一行都不用改
+function _asResult(x, name) {
+  if (!x) return { source: 'error', msg: `${name}无结果` }
+  if (x.error) return { source: 'error', msg: x.msg || `${name}失败` }
+  return x
+}
+
+function applyShiftResult(s, types = null) {
+  const r = s.results || {}
+  const want = (t) => !types || types.includes(t)
+  if (want('state')) stateResult.value = _asResult(r.state, '状态分析')
+  if (want('kpi')) kpiResult.value = _asResult(r.kpi, 'KPI 计算')
+  if (want('stage')) stageCpkResult.value = _asResult(r.stage, '阶段分析')
+  if (want('stage_recipe')) stageAnalysisResult.value = _asResult(r.stage_recipe, '阶段配方分析')
+  if (want('energy')) {
+    energyResult.value = _asResult(r.energy, '能耗分析')
+    // 电表/房子选择由 EnergyBreakdown 子组件在 watch(energyResult) 中自动初始化
+  }
+
+  // 状态结果仍按原样落一份 screen-state 快照（推进 workflow_step，供其它页面读）
+  if (want('state') && !stateResult.value?.source) persistStateSnapshot()
+
+  const cached = s.cached || []
+  const at = r.kpi?._cache?.computed_at || r.state?._cache?.computed_at || r.energy?._cache?.computed_at
+  const unitLabel = s.shift?.shift_type === 'full' ? '该天' : '该班次'
+  currentShiftMeta.value = {
+    cacheInfo: cached.length ? `已有结果${at ? ' · ' + at : ''}` : '本次新算',
+    note: s.shift?.partial
+      ? `${unitLabel}被时间范围截断，指标只覆盖选中的部分，不能与整个单位直接比较`
+      : null,
+  }
+  renderCurrentTab()
+}
+
+async function renderCurrentTab() {
+  await nextTick()
+  if (activeStep.value === 1) {
+    stateCardRef.value?.disposeStateTimeline()
+    await nextTick()
+    if (seriesKeys.value.length > 0) initChart()
+    await nextTick()
+    stateCardRef.value?.renderStateTimeline()
+  } else if (activeStep.value === 2) {
+    energyBreakdownRef.value?.renderEnergyCharts()
+  }
 }
 
 async function loadRunningPeriods() {
@@ -1059,24 +859,38 @@ async function loadRunningPeriods() {
 
 // ── 特征视图 ──
 
-// tab 切换：① 状态(含原始参数曲线) ② 效率 ③ KPI ④ 阶段
+// tab 切换：① 状态&效率(含原始参数曲线) ② 能耗 ③ KPI ④ 阶段
+// 四个 Tab 的数据在选中班次时已一次性取回（共享一次取数），切 Tab 只做渲染，
+// 不再各自发请求 —— 这是把"每切一次 Tab 重拉一遍数据"的搬运浪费去掉的关键。
 async function onStepClick(step) {
   activeStep.value = step
   if (!selectedDevice.value) return
-  if (step === 1 || step === 2) {
-    if (!stateResult.value) await startStateAnalysis()
-    if (step === 1) {
-      disposeStateTimeline()
+
+  // 尚未取过该班次的结果（如刚进页面直接点了别的 Tab）才补一次
+  if (!stateResult.value && selectedShiftKey.value) await loadShiftAnalysis()
+
+  if (step === 1) {
+    energyBreakdownRef.value?.disposeEnergyCharts()
+    stateCardRef.value?.disposeStateTimeline()
+    await nextTick()
+    if (seriesKeys.value.length > 0) initChart()
+    await nextTick()
+    stateCardRef.value?.renderStateTimeline()
+  } else if (step === 2) {
+    disposeChart()
+    // 能耗点位勾选变了才需要重算，且只重算能耗这一类，不动其它三类的缓存
+    if (_lastEnergySel !== selectedEnergyPoints.value.join(',')) {
+      await loadShiftAnalysis(true, ['energy'])
+    } else {
       await nextTick()
-      if (seriesKeys.value.length > 0) initChart()
-      await nextTick()
-      renderStateTimeline()
+      energyBreakdownRef.value?.renderEnergyCharts()
     }
   } else if (step === 3) {
-    if (!kpiResult.value) startKpiAnalysis()
+    disposeChart()
+    energyBreakdownRef.value?.disposeEnergyCharts()
   } else if (step === 4) {
     disposeChart()
-    if (!stageCpkResult.value) startStageCpkAnalysis()
+    energyBreakdownRef.value?.disposeEnergyCharts()
   }
 }
 
@@ -1206,7 +1020,19 @@ async function loadData() {
   loading.value = true
   analysisResult.value = ''
   analysisError.value = ''
+  stateResult.value = null
+  kpiResult.value = null
+  stageCpkResult.value = null
+  stageAnalysisResult.value = null
+  energyResult.value = null
   disposeChart()
+  stateCardRef.value?.disposeStateTimeline()
+  energyBreakdownRef.value?.disposeEnergyCharts()
+  showAlarmOverlay.value = false
+  alarmEvents.value = []
+  showAnomalyDetection.value = false
+  healthTimeline.value = []
+  anomalySummary.value = null
 
   // 「参数设定」页筛选保存的 checked_params 是本页参数范围的唯一依据；
   // 没筛选过(该设备从未在「参数设定」保存过)才回退到该设备全部参数
@@ -1245,6 +1071,13 @@ async function loadData() {
       }
 
       const defaultPoints = ALL_POINT_NAMES.value.slice(0, DEFAULT_VISIBLE_COUNT)
+      // 能耗点位（若已在「参数设定」页勾选）始终随默认点位一起拉取，不受 DEFAULT_VISIBLE_COUNT 截断影响，
+      // 否则用户勾选了组合有功总电能，却因排序靠后未进入默认前5而拉不到数据、也不会自动可见
+      for (const ep of ENERGY_POINTS) {
+        if (ALL_POINT_NAMES.value.includes(ep) && !defaultPoints.includes(ep)) {
+          defaultPoints.push(ep)
+        }
+      }
 
       const res = await getDeviceParamData({
         device_code: selectedDevice.value,
@@ -1277,6 +1110,12 @@ async function loadData() {
                 visibleKeys.value.push(stageParam)
               }
             }
+            // 已勾选的能耗点位始终可见，见上方 defaultPoints 处注释
+            for (const ep of ENERGY_POINTS) {
+              if (allRes.data.series[ep] && !visibleKeys.value.includes(ep)) {
+                visibleKeys.value.push(ep)
+              }
+            }
             Object.assign(displayNames.value, allRes.data.display_names || {})
             Object.assign(paramUnits.value, allRes.data.units || {})
             aggInterval.value = allRes.data.aggregated ? (allRes.data.interval || '') : ''
@@ -1302,6 +1141,12 @@ async function loadData() {
             if ((stageParam.includes('_Stage') || stageParam.includes('Stage')) &&
                 series[stageParam] && !visibleKeys.value.includes(stageParam)) {
               visibleKeys.value.push(stageParam)
+            }
+          }
+          // 已勾选的能耗点位始终可见，见上方 defaultPoints 处注释
+          for (const ep of ENERGY_POINTS) {
+            if (series[ep] && !visibleKeys.value.includes(ep)) {
+              visibleKeys.value.push(ep)
             }
           }
           Object.assign(displayNames.value, res.data.display_names || {})
@@ -1334,15 +1179,13 @@ async function loadData() {
     loading.value = false
     await nextTick()
     if (activeStep.value === 1 && seriesKeys.value.length > 0) initChart()
-    // 状态切片图：已有数据则直接渲染，否则自动加载
-    if (pulseParam.value && activeStep.value === 1) {
-      if (stateResult.value && stateResult.value.timeline?.length) {
-        await nextTick()
-        renderStateTimeline()
-      } else if (!stateResult.value || stateResult.value.source === 'error') {
-        startStateAnalysis()
-      }
-    }
+    // 班次列表 → 默认选最近班次 → 一次取回该班次 4 类分析结果（内部会渲染当前 Tab）
+    if (pulseParam.value) await loadShifts()
+    // 天(06:00~次日06:00)列表——与班次并列展示，供整体切换到"看某一天"
+    if (pulseParam.value) loadDayWindows()
+    // 日期范围跨度 > 1 天：额外取按天(06:00~次日06:00)独立掐头去尾的多日汇总
+    if (pulseParam.value && isMultiDayRange.value) loadDayTrend()
+    else dayTrendResult.value = null
   }
 }
 
@@ -1418,7 +1261,6 @@ async function loadParamWithFallback(key) {
           if (dataStart && dataEnd) {
             startTime.value = toDatetimeLocal(new Date(dataStart.replace(' ', 'T')))
             endTime.value = toDatetimeLocal(new Date(dataEnd.replace(' ', 'T')))
-            activeQuickRange.value = 'custom'
           }
         }
         aggInterval.value = res.data.aggregated ? (res.data.interval || '') : ''
@@ -1505,6 +1347,12 @@ async function tryWiderRangeFallback(allPointNames) {
             visibleKeys.value.push(stageParam)
           }
         }
+        // 已勾选的能耗点位始终可见，见 loadParamData 中 defaultPoints 处注释
+        for (const ep of ENERGY_POINTS) {
+          if (allRes.data.series[ep] && !visibleKeys.value.includes(ep)) {
+            visibleKeys.value.push(ep)
+          }
+        }
         Object.assign(displayNames.value, allRes.data.display_names || {})
         Object.assign(paramUnits.value, allRes.data.units || {})
         aggInterval.value = allRes.data.aggregated ? (allRes.data.interval || '') : ''
@@ -1514,7 +1362,6 @@ async function tryWiderRangeFallback(allPointNames) {
         // fallback 找到数据：更新页面时间范围为数据实际起止时间
         startTime.value = toDatetimeLocal(win.start)
         endTime.value = toDatetimeLocal(win.end)
-        activeQuickRange.value = 'custom'
         return true
       }
     } catch (err) {
@@ -1531,7 +1378,6 @@ async function toggleAll() {
   } else {
     const unloadedKeys = seriesKeys.value.filter(k => !LOADED_POINT_NAMES.value.has(k) || (seriesData.value[k] && seriesData.value[k].length === 0))
     if (unloadedKeys.length > 0) {
-      // 逐级回退尝试：当前范围 → 7天 → 30天 → 90天
       const now = new Date()
       const pad = (n) => String(n).padStart(2, '0')
       const fmtTs = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
@@ -1571,7 +1417,6 @@ async function toggleAll() {
               if (win.label !== '当前范围') {
                 startTime.value = toDatetimeLocal(win.start)
                 endTime.value = toDatetimeLocal(win.end)
-                activeQuickRange.value = 'custom'
               }
               aggInterval.value = res.data.aggregated ? (res.data.interval || '') : ''
               foundAny = true
@@ -1582,7 +1427,6 @@ async function toggleAll() {
         }
         if (foundAny) break
       }
-      // 标记剩余未加载的
       for (const k of unloadedKeys) {
         if (!LOADED_POINT_NAMES.value.has(k)) LOADED_POINT_NAMES.value.add(k)
       }
@@ -2349,17 +2193,9 @@ function disposeChart() {
 }
 
 function handleResize() {
-  if (stateTimelineChart && !stateTimelineChart.isDisposed()) stateTimelineChart.resize()
+  stateCardRef.value?.resizeStateTimeline()
   if (chartInstance && !chartInstance.isDisposed()) {
     chartInstance.resize()
-  }
-  for (const k in featureChartInstances) {
-    const inst = featureChartInstances[k]
-    if (inst && !inst.isDisposed()) inst.resize()
-  }
-  for (const k in sparklineInstances) {
-    const inst = sparklineInstances[k]
-    if (inst && !inst.isDisposed()) inst.resize()
   }
 }
 
@@ -2403,44 +2239,6 @@ async function toggleAnalysisLog() {
   }
 }
 
-async function startStateAnalysis() {
-  if (!selectedDevice.value) return
-  if (!pulseParam.value) {
-    stateResult.value = { source: 'error', msg: '请先在「参数设定」页面中设置生产节拍(脉搏)参数' }
-    return
-  }
-  // 取消上一次请求，递增计数器，只有最新请求的响应才生效
-  if (_stateAbort) { _stateAbort.abort(); _stateAbort = null }
-  const abortCtrl = new AbortController()
-  _stateAbort = abortCtrl
-  const reqId = ++_stateRequestId
-
-  disposeStateTimeline()
-  stateResult.value = { source: 'loading' }
-  try {
-    const res = await client.post('/device-params/state-analysis', {
-      device_code: selectedDevice.value, device_name: currentDeviceName(),
-      pulse_param: pulseParam.value, days: stateDays.value,
-    }, { timeout: 0, signal: abortCtrl.signal })
-    if (reqId !== _stateRequestId) return  // 不是最新请求，忽略
-    if (res.code === 200 && res.data) {
-      stateResult.value = res.data
-      persistStateSnapshot()
-      await nextTick()
-      renderStateTimeline()
-    } else {
-      stateResult.value = { source: 'error', msg: res.msg || '状态分析失败' }
-    }
-  } catch (err) {
-    if (err?.name === 'CanceledError' || err?.name === 'AbortError') return
-    if (reqId !== _stateRequestId) return
-    stateResult.value = { source: 'error', msg: err.response?.data?.msg || err.message || '状态分析请求失败' }
-  } finally {
-    if (_stateAbort === abortCtrl) _stateAbort = null
-  }
-}
-
-
 // 状态分析出结果后自动落库（原弹窗底部的“确认”按钮已取消）。
 // 只推进度 + 存快照，不带 classified/checked_params，避免冲掉「参数设定」页的筛选结果
 function persistStateSnapshot() {
@@ -2452,44 +2250,8 @@ function persistStateSnapshot() {
   }).catch(() => {})
 }
 
-async function startKpiAnalysis() {
-  if (!selectedDevice.value) return
-  if (!pulseParam.value) {
-    kpiResult.value = { source: 'error', msg: '请先在「参数设定」页面中设置生产节拍(脉搏)参数' }
-    return
-  }
-  kpiResult.value = { source: 'loading' }
-  try {
-    const res = await client.post('/device-params/kpi', {
-      device_code: selectedDevice.value, device_name: currentDeviceName(),
-      pulse_param: pulseParam.value, days: kpiDays.value,
-    }, { timeout: 0 })
-    if (res.code === 200 && res.data) kpiResult.value = res.data
-    else kpiResult.value = { source: 'error', msg: res.msg || 'KPI 计算失败' }
-  } catch (err) {
-    kpiResult.value = { source: 'error', msg: err.response?.data?.msg || err.message }
-  }
-}
-
-async function startStageCpkAnalysis() {
-  if (!selectedDevice.value) return
-  if (!pulseParam.value) {
-    stageCpkResult.value = { source: 'error', msg: '请先在「参数设定」页面中设置生产节拍(脉搏)参数' }
-    return
-  }
-  stageCpkResult.value = { source: 'loading' }
-  try {
-    const res = await client.post('/device-params/stage-cpk', {
-      device_code: selectedDevice.value, device_name: currentDeviceName(),
-      pulse_param: pulseParam.value, days: stageCpkDays.value,
-    }, { timeout: 0 })
-    if (res.code === 200 && res.data) stageCpkResult.value = res.data
-    else stageCpkResult.value = { source: 'error', msg: res.msg || '阶段CPK计算失败' }
-  } catch (err) {
-    stageCpkResult.value = { source: 'error', msg: err.response?.data?.msg || err.message }
-  }
-}
-
+// ── 标准节拍基准（性能效率的分子）──
+// 冻结在配置里、不随分析窗口漂移，否则设备整体变慢时 P10 跟着变慢，劣化被掩盖
 // 读取「参数设定」页筛选保存的 checked_params —— 本页参数范围唯一依据，返回非空数组；
 // 没筛选过(无记录/从未保存)时返回 null，由调用方(loadData)回退到该设备全部参数。
 // 顺带同步 pulse_param / workflow_step / state_data，供其它 tab(状态/KPI/阶段CPK)使用。
@@ -2499,7 +2261,6 @@ async function loadScreenStateFromDb() {
     if (r.code === 200 && r.data) {
       workflowStep.value = r.data.workflow_step || 2
       if (r.data.pulse_param) pulseParam.value = r.data.pulse_param
-      if (r.data.state_data) stateResult.value = r.data.state_data
       if (r.data.checked_params?.length) return r.data.checked_params
     }
   } catch (e) {}
@@ -2538,7 +2299,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   disposeChart()
-  disposeStateTimeline()
+  stateCardRef.value?.disposeStateTimeline()
+  energyBreakdownRef.value?.disposeEnergyCharts()
 
   if (resizeHandler) {
     window.removeEventListener('resize', resizeHandler)

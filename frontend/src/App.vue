@@ -193,6 +193,7 @@ const navGroups = [
     name: '系统管理',
     items: [
       { path: '/system/jobs', name: '任务管理' },
+      { path: '/system/device-visibility', name: '设备列表' },
     ],
   },
 ]

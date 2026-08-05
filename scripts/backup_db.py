@@ -8,7 +8,7 @@ PostgreSQL 数据库备份脚本
 用法:
     python scripts/backup_db.py
     python scripts/backup_db.py --output-dir D:/backup
-    python scripts/backup_db.py --host 192.168.50.224 --port 15432
+    python scripts/backup_db.py --host CHANGE_ME --port 15432
 
 输出:
     backup_YYYYMMDD_HHMMSS/
@@ -30,10 +30,10 @@ import psycopg2
 
 # ========== 配置 ==========
 DB_CONFIG = {
-    "host": "192.168.50.224",
+    "host": "CHANGE_ME",
     "port": 15432,
     "user": "zxzz",
-    "password": "CHANGE_ME@Zxzz",
+    "password": "CHANGE_ME",
     "dbname": "knowledge_base",
 }
 
@@ -300,7 +300,7 @@ def generate_restore_script(output_dir: str, schema_file: str, data_file: str, c
 # 用法:
 #   bash restore.sh <PG_HOST> <PG_PORT> <PG_DB> <PG_USER>
 # 示例:
-#   bash restore.sh 192.168.50.224 15432 knowledge_base zxzz
+#   bash restore.sh CHANGE_ME 15432 knowledge_base zxzz
 
 HOST=${{1:-localhost}}
 PORT=${{2:-5432}}

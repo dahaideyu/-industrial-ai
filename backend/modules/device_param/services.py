@@ -19,6 +19,64 @@ except ImportError:
     HAS_PYMYSQL = False
 
 
+def _curated_visible_device_ids(conn) -> List[str]:
+    """一次性迁移用：按旧版 get_devices() 硬编码的球磨机白名单+每类型3台上限逻辑，
+    算出"应该保持可见"的设备清单——只在新增 visible_in_params 列时调用一次，
+    保证上线那一刻下拉框跟改造前完全一样。之后新设备/新增可见都在
+    "系统管理→设备列表"页里由管理员手动开，不再走这套硬编码。
+    """
+    PREFERRED_BALL_MILL_CODES = ('BTR-QSDLQM-02-025', 'BTR-QSDLQM-02-031')
+    with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute("""
+            SELECT di.id, di.device_id AS device_code,
+                   CASE
+                       WHEN di.device_id LIKE 'BTR-QSDLQM%' THEN '球磨机'
+                       WHEN di.device_id LIKE 'BTR-QSDLHG%' THEN '合膏机'
+                       WHEN di.device_id LIKE 'BTR-QSDLGH%' THEN '固化室'
+                       ELSE '其他'
+                   END AS device_type
+            FROM device_info di
+            WHERE di.device_id LIKE 'BTR-QSDLQM%'
+               OR di.device_id LIKE 'BTR-QSDLHG%'
+               OR di.device_id LIKE 'BTR-QSDLGH%'
+            ORDER BY device_type, di.id
+        """)
+        devices = [dict(row) for row in cursor.fetchall()]
+
+    type_count: Dict[str, int] = {}
+    visible_ids: List[str] = []
+    for dev in devices:
+        dev_type = dev['device_type']
+        if dev_type == '球磨机' and dev['device_code'] not in PREFERRED_BALL_MILL_CODES:
+            continue
+        if type_count.get(dev_type, 0) < 3:
+            visible_ids.append(dev['device_code'])
+            type_count[dev_type] = type_count.get(dev_type, 0) + 1
+    return visible_ids
+
+
+def ensure_visible_in_params_column(conn) -> None:
+    """device_info 新增 visible_in_params 列(参数分析页下拉框是否显示该设备)，
+    幂等——只在列不存在时建列+一次性回填，之后每次调用都只是一次轻量的
+    information_schema 查询，不会重复回填、也不会覆盖管理员之后的手动调整。
+    """
+    with conn.cursor() as cur:
+        cur.execute("""SELECT 1 FROM information_schema.columns
+                       WHERE table_name='device_info' AND column_name='visible_in_params'""")
+        if cur.fetchone() is not None:
+            return
+        cur.execute("ALTER TABLE device_info ADD COLUMN visible_in_params "
+                    "BOOLEAN NOT NULL DEFAULT false")
+    visible_ids = _curated_visible_device_ids(conn)
+    if visible_ids:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE device_info SET visible_in_params = true "
+                       "WHERE device_id = ANY(%s)", (visible_ids,))
+    conn.commit()
+    print(f"[device_info] 新增 visible_in_params 列，回填 {len(visible_ids)} 台设备为可见"
+          "(保持改造前下拉框一致)")
+
+
 class TimescaleDB:
     """PostgreSQL (TimescaleDB) 设备参数数据库操作类"""
 
@@ -60,8 +118,8 @@ class TimescaleDB:
             self.mysql_conn = pymysql.connect(
                 host=host,
                 port=int(os.getenv("AQA_MYSQL_PORT") or os.getenv("SRC_MYSQL_PORT", "3306")),
-                user=os.getenv("AQA_MYSQL_USER") or os.getenv("SRC_MYSQL_USER", "CHANGE_MEonly_user"),
-                password=os.getenv("AQA_MYSQL_PASSWORD") or os.getenv("SRC_MYSQL_PASSWORD", "CHANGE_ME@2026"),
+                user=os.getenv("AQA_MYSQL_USER") or os.getenv("SRC_MYSQL_USER", "readonly_user"),
+                password=os.getenv("AQA_MYSQL_PASSWORD") or os.getenv("SRC_MYSQL_PASSWORD", "CHANGE_ME"),
                 database=os.getenv("AQA_MYSQL_DATABASE") or os.getenv("SRC_MYSQL_DB", "btr"),
                 charset="utf8mb4",
                 connect_timeout=10,
@@ -82,16 +140,19 @@ class TimescaleDB:
             self.mysql_conn = None
 
     def get_devices(self) -> List[Dict[str, Any]]:
-        """获取设备列表
+        """获取设备列表——只返回管理员在"系统管理→设备列表"页里勾选为可见
+        (visible_in_params=true) 的设备。哪些设备可见不再写死在代码里，见
+        ensure_visible_in_params_column() 的迁移说明和 backend/routes/device_config.py。
 
-        只返回球磨机、合膏机、固化室三种设备，每种类型只返回前两个设备。
-        设备类型通过 device_code 前缀判断：
+        设备类型仍按 device_code 前缀分组显示：
         - 球磨机: BTR-QSDLQM-xxx
         - 合膏机: BTR-QSDLHG-xxx / BTR-QSDLHG02-xxx
         - 固化室: BTR-QSDLGH-xxx
         """
         if not self.conn:
             return []
+
+        ensure_visible_in_params_column(self.conn)
 
         with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute("SET statement_timeout = '5s'")
@@ -104,30 +165,10 @@ class TimescaleDB:
                            ELSE '其他'
                        END AS device_type
                 FROM device_info di
-                WHERE di.device_id LIKE 'BTR-QSDLQM%'
-                   OR di.device_id LIKE 'BTR-QSDLHG%'
-                   OR di.device_id LIKE 'BTR-QSDLGH%'
+                WHERE di.visible_in_params = true
                 ORDER BY device_type, di.id
             """)
-            devices = [dict(row) for row in cursor.fetchall()]
-
-        # 每种类型保留 3 台（球磨机、固化室、合膏机各最多 3 台）
-        PREFERRED_BALL_MILL_CODES = ('BTR-QSDLQM-02-025', 'BTR-QSDLQM-02-031')
-
-        type_count = {}
-        filtered_devices = []
-        for dev in devices:
-            dev_type = dev['device_type']
-            if dev_type == '球磨机' and dev['device_code'] not in PREFERRED_BALL_MILL_CODES:
-                continue
-            if dev_type not in type_count:
-                type_count[dev_type] = 0
-            max_count = 3  # 每种类型最多 3 台
-            if type_count[dev_type] < max_count:
-                filtered_devices.append(dev)
-                type_count[dev_type] += 1
-
-        return filtered_devices
+            return [dict(row) for row in cursor.fetchall()]
 
     def get_energy_device_ids(self, device_code: str) -> List[str]:
         """查 device_energy_meter，返回 device_code 关联的电表 device_id 列表。
@@ -416,8 +457,10 @@ class TimescaleDB:
         # >= 1hour 走连续聚合物化视图，秒出
         if interval in ("1hour", "4hour", "1day"):
             result = self._aggregated_from_cagg(device_code, start_time, end_time, p_name, p_names, interval)
-            if result is not None:
+            if result is not None and result.get("series"):
                 return result
+            # cagg 视图对该时间范围无数据（例如视图保留期短于原始表），
+            # 回退到原始表聚合，保证用户能看到历史数据
 
         # 5min / 15min 仍然扫原始表（跨度小，行数可控，且有 point_value_full 无 LATERAL）
         return self._aggregated_from_raw(device_code, start_time, end_time, p_name, p_names, interval)
@@ -599,12 +642,13 @@ class TimescaleDB:
         for row in raw:
             key = row["p_name"]
             b = row["bucket"]
+            # cagg 视图(NUMERIC 列)返回 Decimal，JSON 无法序列化，统一转 float
             grouped.setdefault(key, []).append({
                 "time": b.strftime("%Y-%m-%d %H:%M:%S") if isinstance(b, datetime) else str(b),
-                "value": round(row["avg_val"], 3) if row["avg_val"] is not None else None,
-                "min": round(row["min_val"], 3) if row["min_val"] is not None else None,
-                "max": round(row["max_val"], 3) if row["max_val"] is not None else None,
-                "std": round(row["std_val"], 3) if row["std_val"] is not None else None,
+                "value": round(float(row["avg_val"]), 3) if row["avg_val"] is not None else None,
+                "min": round(float(row["min_val"]), 3) if row["min_val"] is not None else None,
+                "max": round(float(row["max_val"]), 3) if row["max_val"] is not None else None,
+                "std": round(float(row["std_val"]), 3) if row["std_val"] is not None else None,
                 "count": row["cnt"],
             })
         return {"interval": interval, "series": grouped}

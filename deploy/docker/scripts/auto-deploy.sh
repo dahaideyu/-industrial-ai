@@ -105,6 +105,10 @@ PREV_TAG="$(cat "$LAST_OK_TAG_FILE" 2>/dev/null || echo '')"
 
 cd "$REPO_DIR/deploy/docker" || die "找不到 deploy/docker"
 
+# 构建前始终基于本次提交的明文提示词生成加密产物；密钥从 deploy/docker/.env 读取。
+log "加密提示词 ..."
+python "$REPO_DIR/scripts/encrypt_prompts.py" || die "提示词加密失败，请检查 deploy/docker/.env 中的 PROMPT_ENCRYPT_KEY"
+
 # ── 构建前的内存闸门 ──────────────────────────────────────────────────────
 # 4GB 的小机器上，构建（前端 vite 实测峰值约 900MB + npm/pip 安装）可能把内存吃满，
 # 触发 OOM killer —— 被杀的未必是构建进程，也可能是正在服务的 industrial-ai 容器。

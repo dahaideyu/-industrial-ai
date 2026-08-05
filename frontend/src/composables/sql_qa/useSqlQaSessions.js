@@ -27,7 +27,9 @@ function loadSessions() {
 function saveSessions(data) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-  } catch {}
+  } catch (e) {
+    console.warn('[SQL-QA] 会话持久化失败:', e)
+  }
 }
 
 export function useSqlQaSessions() {
@@ -100,7 +102,7 @@ export function useSqlQaSessions() {
     sessions.value = [session, ...sessions.value]
     activeId.value = session.id
     // 同步到 API
-    apiCreateSession({ id: session.id, title: session.title }).catch(() => {})
+    apiCreateSession({ id: session.id, title: session.title }).catch(err => console.error('[SQL-QA] 创建会话同步失败:', err))
     return session
   }
 
@@ -113,7 +115,7 @@ export function useSqlQaSessions() {
     if (activeId.value === id) {
       activeId.value = sessions.value.length > 0 ? sessions.value[0].id : null
     }
-    apiDeleteSession(id).catch(() => {})
+    apiDeleteSession(id).catch(err => console.error('[SQL-QA] 删除会话同步失败:', err))
   }
 
   function updateSessionTitle(id, title) {
@@ -121,7 +123,7 @@ export function useSqlQaSessions() {
     if (s) {
       s.title = title
       s.updatedAt = Date.now()
-      apiUpdateSession(id, { title }).catch(() => {})
+      apiUpdateSession(id, { title }).catch(err => console.error('[SQL-QA] 更新标题同步失败:', err))
     }
   }
 
@@ -161,7 +163,7 @@ export function useSqlQaSessions() {
     if (s) {
       s.memory = memory
       s.updatedAt = Date.now()
-      apiUpdateSession(id, { memory: JSON.stringify(memory) }).catch(() => {})
+      apiUpdateSession(id, { memory: JSON.stringify(memory) }).catch(err => console.error('[SQL-QA] 更新记忆同步失败:', err))
     }
   }
 

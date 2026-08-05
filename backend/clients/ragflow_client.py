@@ -5,8 +5,11 @@ RAGFlow 客户端
 """
 import os
 import json
+import logging
 import threading
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class RAGFlowClient:
@@ -53,13 +56,8 @@ class RAGFlowClient:
         else:
             self.api_endpoint = None
 
-        print(f"[RAGFlow] 已初始化")
-        if self.conversation_id:
-            print(f"[RAGFlow]   对话ID: {self.conversation_id}")
-            print(f"[RAGFlow]   API地址: {self.api_endpoint}")
-            print(f"[RAGFlow]   模型: {self.model}")
-        if self.dataset_id:
-            print(f"[RAGFlow]   知识库ID: {self.dataset_id}")
+        logger.info("[RAGFlow] 已初始化 conversation_id=%s dataset_id=%s model=%s",
+                    self.conversation_id, self.dataset_id, self.model)
 
     def stream(self, prompt: str, context: str = None):
         """
@@ -183,9 +181,7 @@ class RAGFlowClient:
             'Authorization': f'Bearer {self.api_key}'
         }
 
-        print(f"[RAGFlow] 下载文档: {url}")
-        print(f"[RAGFlow]   dataset_id: {dataset_id}")
-        print(f"[RAGFlow]   document_id: {document_id}")
+        logger.debug("[RAGFlow] 下载文档: dataset_id=%s document_id=%s", dataset_id, document_id)
 
         response = requests.get(
             url,
@@ -195,7 +191,7 @@ class RAGFlowClient:
         )
         response.raise_for_status()
 
-        print(f"[RAGFlow] 文档下载成功，Content-Type: {response.headers.get('Content-Type', 'N/A')}")
+        logger.debug("[RAGFlow] 文档下载成功，Content-Type: %s", response.headers.get('Content-Type', 'N/A'))
         return response
 
     def retrieve(
@@ -286,22 +282,15 @@ class RAGFlowClient:
 
         # 检查 question 是否为空
         if not question:
+            logger.warning("[RAGFlow] 检索问题为空，跳过检索")
             if job_logger:
                 job_logger.warning("[RAGFlow] 检索问题为空，跳过检索")
-            else:
-                print("[RAGFlow] 检索问题为空，跳过检索")
             return []
 
+        logger.info("[RAGFlow] 开始检索，问题长度: %d 字符，参数: page_size=%d, top_k=%d, dataset_id=%s",
+                    len(question), page_size, top_k, target_dataset_id)
         if job_logger:
             job_logger.info("[RAGFlow] 开始检索，问题长度: %d 字符", len(question))
-            job_logger.info("[RAGFlow] 检索参数: page_size=%d, top_k=%d, dataset_id=%s", page_size, top_k, target_dataset_id)
-            job_logger.info("[RAGFlow] 检索模式: 混合检索 (vector_weight=%s, keyword=%s)", vector_similarity_weight, keyword)
-            job_logger.info("[RAGFlow] 检索问题: %s", question[:100] + "...")
-        else:
-            print(f"[RAGFlow] 开始检索，问题长度: {len(question)} 字符")
-            print(f"[RAGFlow] 检索参数: page_size={page_size}, top_k={top_k}, dataset_id={target_dataset_id}")
-            print(f"[RAGFlow] 检索模式: 混合检索 (vector_weight={vector_similarity_weight}, keyword={keyword})")
-            print(f"[RAGFlow] 检索问题: {question[:100]}...")
 
         try:
             response = requests.post(
@@ -314,73 +303,22 @@ class RAGFlowClient:
 
             result = response.json()
 
-            # 打印原始 API 返回结果（用于调试）
-            if job_logger:
-                job_logger.info("")
-                job_logger.info("=" * 60)
-                job_logger.info("[RAGFlow] API 原始返回结果:")
-                job_logger.info("=" * 60)
-                job_logger.info("[RAGFlow] HTTP 状态码: %s", response.status_code)
-                job_logger.info("[RAGFlow] 返回 code: %s", result.get('code'))
-                job_logger.info("[RAGFlow] 返回 message: %s", result.get('message', 'N/A'))
-            else:
-                print(f"\n{'='*60}")
-                print(f"[RAGFlow] API 原始返回结果:")
-                print(f"{'='*60}")
-                print(f"[RAGFlow] HTTP 状态码: {response.status_code}")
-                print(f"[RAGFlow] 返回 code: {result.get('code')}")
-                print(f"[RAGFlow] 返回 message: {result.get('message', 'N/A')}")
-
-            # 打印 data 部分的详细信息
+            # 摘要信息走 INFO，完整 chunk 明细只在 DEBUG 级别输出
             data = result.get('data', {})
-            if data:
-                if job_logger:
-                    job_logger.info("[RAGFlow] data.total: %s", data.get('total', 'N/A'))
-                    chunk_list = data.get('chunks', [])
-                    job_logger.info("[RAGFlow] data.chunks 数量: %d", len(chunk_list))
-                    for i, item in enumerate(chunk_list[:3]):  # 最多打印3个
-                        job_logger.info("")
-                        job_logger.info("[RAGFlow] Chunk %d:", i+1)
-                        job_logger.info("  - id: %s", item.get('id', 'N/A'))
-                        job_logger.info("  - document_id: %s", item.get('document_id', 'N/A'))
-                        job_logger.info("  - dataset_id: %s", item.get('dataset_id', 'N/A'))
-                        job_logger.info("  - document_keyword: %s", item.get('document_keyword', 'N/A'))
-                        job_logger.info("  - document_name: %s", item.get('document_name', 'N/A'))
-                        job_logger.info("  - similarity: %s", item.get('similarity', 'N/A'))
-                        job_logger.info("  - term_similarity: %s", item.get('term_similarity', 'N/A'))
-                        job_logger.info("  - vector_similarity: %s", item.get('vector_similarity', 'N/A'))
-                        job_logger.info("  - positions: %s", item.get('positions', 'N/A'))
-                        content = item.get('content', '')
-                        job_logger.info("  - content (前100字符): %s...", content[:100])
-                else:
-                    print(f"[RAGFlow] data.total: {data.get('total', 'N/A')}")
-                    chunk_list = data.get('chunks', [])
-                    print(f"[RAGFlow] data.chunks 数量: {len(chunk_list)}")
-                    for i, item in enumerate(chunk_list[:3]):  # 最多打印3个
-                        print(f"\n[RAGFlow] Chunk {i+1}:")
-                        print(f"  - id: {item.get('id', 'N/A')}")
-                        print(f"  - document_id: {item.get('document_id', 'N/A')}")
-                        print(f"  - dataset_id: {item.get('dataset_id', 'N/A')}")
-                        print(f"  - document_keyword: {item.get('document_keyword', 'N/A')}")
-                        print(f"  - document_name: {item.get('document_name', 'N/A')}")
-                        print(f"  - similarity: {item.get('similarity', 'N/A')}")
-                        print(f"  - term_similarity: {item.get('term_similarity', 'N/A')}")
-                        print(f"  - vector_similarity: {item.get('vector_similarity', 'N/A')}")
-                        print(f"  - positions: {item.get('positions', 'N/A')}")
-                        content = item.get('content', '')
-                        print(f"  - content (前100字符): {content[:100]}...")
-            else:
-                if job_logger:
-                    job_logger.info("[RAGFlow] data 为空")
-                    job_logger.info("[RAGFlow] 完整返回: %s", json.dumps(result, ensure_ascii=False, indent=2))
-                else:
-                    print(f"[RAGFlow] data 为空")
-                    print(f"[RAGFlow] 完整返回: {json.dumps(result, ensure_ascii=False, indent=2)}")
-
+            chunk_list = data.get('chunks', []) if data else []
+            logger.info("[RAGFlow] 检索响应: HTTP %s, code=%s, chunks=%d",
+                        response.status_code, result.get('code'), len(chunk_list))
             if job_logger:
-                job_logger.info("%s\n", "=" * 60)
-            else:
-                print(f"{'='*60}\n")
+                job_logger.info("[RAGFlow] 检索响应: HTTP %s, code=%s, chunks=%d",
+                                response.status_code, result.get('code'), len(chunk_list))
+            if logger.isEnabledFor(logging.DEBUG):
+                for i, item in enumerate(chunk_list[:3]):
+                    logger.debug("[RAGFlow] Chunk %d: id=%s similarity=%s content=%s...",
+                                 i + 1, item.get('id', 'N/A'),
+                                 item.get('similarity', 'N/A'),
+                                 item.get('content', '')[:100])
+            if not data:
+                logger.debug("[RAGFlow] data 为空，完整返回: %s", json.dumps(result, ensure_ascii=False))
 
             # 解析检索结果
             chunks = []
@@ -408,19 +346,15 @@ class RAGFlowClient:
                         }
                         chunks.append(chunk)
 
+            logger.info("[RAGFlow] 检索完成，返回 %d 个知识块（相似度阈值: %s）", len(chunks), similarity_threshold)
             if job_logger:
                 job_logger.info("[RAGFlow] 检索完成，返回 %d 个知识块（相似度阈值: %s）", len(chunks), similarity_threshold)
-            else:
-                print(f"[RAGFlow] 检索完成，返回 {len(chunks)} 个知识块（相似度阈值: {similarity_threshold}）")
             return chunks
 
         except requests.exceptions.RequestException as e:
+            logger.error("[RAGFlow] 检索失败: %s", e, exc_info=True)
             if job_logger:
                 job_logger.error("[RAGFlow] 检索失败: %s", e, exc_info=True)
-            else:
-                print(f"[RAGFlow] 检索失败: {e}")
-                import traceback
-                traceback.print_exc()
             # 检索失败时返回空列表，不中断报告生成流程
             return []
 

@@ -92,6 +92,7 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
                     markdown_content        TEXT,
                     summary_markdown        TEXT,
                     kb_report_markdown      TEXT,
+                    team_compare_markdown   TEXT,
                     knowledge_base_payload  TEXT,
                     status                  INTEGER     NOT NULL DEFAULT 0,
                     error_message           TEXT,
@@ -130,6 +131,12 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
                 END $$;
             """)
 
+            # 迁移：为旧表补充第四份班次/班组绩效报告字段（幂等）
+            cur.execute("""
+                ALTER TABLE ai_analysis_report
+                ADD COLUMN IF NOT EXISTS team_compare_markdown TEXT;
+            """)
+
         conn.commit()
         logger.info("[数据库] ai_analysis_report 表初始化完成")
     except Exception:
@@ -156,6 +163,7 @@ def upsert_report(
     markdown_content: str = "",
     summary_markdown: str = "",
     kb_report_markdown: str = "",
+    team_compare_markdown: str = "",
     knowledge_base_payload: str = "",
     agent_response_processed: str = "",
     db_path: str = DEFAULT_DB_PATH,
@@ -181,6 +189,7 @@ def upsert_report(
         markdown_content: 第一份报告 Markdown 内容
         summary_markdown: 第二份报告 Markdown 内容
         kb_report_markdown: 第三份报告 Markdown 内容
+        team_compare_markdown: 第四份班次/班组绩效对比报告 Markdown 内容
         knowledge_base_payload: 知识库信息 JSON
         agent_response_processed: 预处理后的数据 JSON
         db_path: 兼容旧参数，PG 下忽略
@@ -215,10 +224,11 @@ def upsert_report(
                 INSERT INTO ai_analysis_report (
                     report_code, title, period_label,
                     request_payload, agent_response_raw, agent_response_processed,
-                    markdown_content, summary_markdown, kb_report_markdown, knowledge_base_payload,
+                    markdown_content, summary_markdown, kb_report_markdown,
+                    team_compare_markdown, knowledge_base_payload,
                     status, error_message,
                     workshop_id, date_type, once_qualified_flag, class_id, procedure_id, report_date
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (report_code, workshop_id, date_type, once_qualified_flag, class_id, procedure_id, report_date)
                 DO UPDATE SET
                     title                = EXCLUDED.title,
@@ -229,6 +239,7 @@ def upsert_report(
                     markdown_content     = EXCLUDED.markdown_content,
                     summary_markdown     = EXCLUDED.summary_markdown,
                     kb_report_markdown   = EXCLUDED.kb_report_markdown,
+                    team_compare_markdown = EXCLUDED.team_compare_markdown,
                     knowledge_base_payload = EXCLUDED.knowledge_base_payload,
                     status               = EXCLUDED.status,
                     error_message        = EXCLUDED.error_message,
@@ -237,7 +248,8 @@ def upsert_report(
             """, (
                 report_code, title, period_label,
                 request_payload_str, agent_response_raw_str, agent_response_processed,
-                markdown_content, summary_markdown, kb_report_markdown, knowledge_base_payload,
+                markdown_content, summary_markdown, kb_report_markdown,
+                team_compare_markdown, knowledge_base_payload,
                 status, error_message,
                 workshop_id, date_type, once_qualified_flag, class_id, procedure_id, report_date
             ))

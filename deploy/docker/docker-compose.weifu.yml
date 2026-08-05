@@ -14,7 +14,7 @@ services:
     environment:
       POSTGRES_DB: knowledge_base
       POSTGRES_USER: zxzz
-      POSTGRES_PASSWORD: CHANGE_ME@Zxzz
+      POSTGRES_PASSWORD: CHANGE_ME
 
   knb-celery-worker:
     env_file:

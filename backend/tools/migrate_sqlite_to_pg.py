@@ -98,6 +98,7 @@ def ensure_table(pg_conn) -> None:
             markdown_content        TEXT,
             summary_markdown        TEXT,
             kb_report_markdown      TEXT,
+            team_compare_markdown   TEXT,
             knowledge_base_payload  TEXT,
             status                  INTEGER     NOT NULL DEFAULT 0,
             error_message           TEXT,
@@ -113,6 +114,10 @@ def ensure_table(pg_conn) -> None:
                 once_qualified_flag, class_id, procedure_id, report_date
             )
         )
+    """)
+    cur.execute("""
+        ALTER TABLE ai_analysis_report
+        ADD COLUMN IF NOT EXISTS team_compare_markdown TEXT
     """)
     pg_conn.commit()
     cur.close()

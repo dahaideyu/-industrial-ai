@@ -90,7 +90,7 @@ async def generate_report_stream(request: GenerateReportRequest):
 
 
 @router.post("/generate/batch")
-async def generate_batch_reports(
+def generate_batch_reports(
     request: BatchGenerateRequest,
     background_tasks: BackgroundTasks
 ):
@@ -128,7 +128,7 @@ async def generate_batch_reports(
 # ==================== 报告查询 API ====================
 
 @router.get("/list")
-async def list_reports(
+def list_reports(
     report_type: Optional[str] = Query(None, description="报告类型 (daily/weekly/monthly)"),
     device_id: Optional[str] = Query(None, description="设备ID"),
     workshop_id: Optional[str] = Query(None, description="车间ID"),
@@ -200,7 +200,7 @@ async def list_reports(
 
 
 @router.get("/detail/{report_id}")
-async def get_report_detail(report_id: int):
+def get_report_detail(report_id: int):
     """获取报告详情"""
     db = PostgresDB()
     if not db.connect():
@@ -227,7 +227,7 @@ async def get_report_detail(report_id: int):
 
 
 @router.delete("/delete/{report_id}")
-async def delete_report(report_id: int):
+def delete_report(report_id: int):
     """删除报告"""
     db = PostgresDB()
     if not db.connect():
@@ -244,7 +244,7 @@ async def delete_report(report_id: int):
 
 
 @router.get("/summary/{report_type}/{report_date}")
-async def get_report_summary(
+def get_report_summary(
     report_type: str,
     report_date: date
 ):
@@ -263,7 +263,7 @@ async def get_report_summary(
 # ==================== 车间汇总 API ====================
 
 @router.get("/workshop-summary")
-async def get_workshop_summaries(
+def get_workshop_summaries(
     report_type: str = Query(..., description="报告类型"),
     report_date: date = Query(..., description="报告日期"),
     workshop_id: Optional[str] = Query(None, description="车间ID"),
@@ -306,7 +306,7 @@ async def get_workshop_summaries(
 # ==================== 设备列表 API ====================
 
 @router.get("/devices")
-async def list_devices(
+def list_devices(
     workshop_id: Optional[str] = Query(None, description="车间ID")
 ):
     """获取设备列表"""
@@ -326,7 +326,7 @@ async def list_devices(
 # ==================== 调度管理 API ====================
 
 @router.post("/schedule/trigger")
-async def trigger_scheduled_report(
+def trigger_scheduled_report(
     request: TriggerScheduledRequest,
     background_tasks: BackgroundTasks
 ):
@@ -362,7 +362,7 @@ async def trigger_scheduled_report(
 
 
 @router.get("/jobs")
-async def list_report_jobs(
+def list_report_jobs(
     job_type: Optional[str] = Query(None, description="任务类型"),
     status: Optional[str] = Query(None, description="任务状态"),
     limit: int = Query(50, description="返回数量限制")
@@ -401,7 +401,7 @@ async def list_report_jobs(
 
 
 @router.get("/jobs/{job_id}")
-async def get_job_detail(job_id: int):
+def get_job_detail(job_id: int):
     """获取任务详情"""
     db = PostgresDB()
     if not db.connect():
@@ -425,7 +425,7 @@ async def get_job_detail(job_id: int):
 
 
 @router.get("/schedule/status")
-async def get_schedule_status():
+def get_schedule_status():
     """获取调度器状态和已调度的任务"""
     scheduler = get_scheduler()
     jobs = scheduler.get_scheduled_jobs()
@@ -439,7 +439,7 @@ async def get_schedule_status():
 # ==================== 模板管理 API ====================
 
 @router.get("/templates")
-async def list_templates():
+def list_templates():
     """列出可用的报告模板"""
     from .prompts import list_available_templates
     templates = list_available_templates()
@@ -471,7 +471,7 @@ class PredictResponse(BaseModel):
 
 
 @router.post("/predict", response_model=None)
-async def predict_fault(request: PredictRequest):
+def predict_fault(request: PredictRequest):
     """
     设备故障预测
 

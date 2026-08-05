@@ -6,10 +6,12 @@ set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 
 REM Defaults
-set "HOST=0.0.0.0"
-set "PORT=9300"
+REM HOST/PORT 留空＝不覆盖，实际监听地址/端口由 .env 的 FASTAPI_HOST/FASTAPI_PORT 决定
+REM （单一配置来源）；只有显式传 -h/-p 才会覆盖 .env。
+set "HOST="
+set "PORT="
 set "RELOAD=false"
-set "ENV_FILE=.env"
+set "ENV_FILE=%SCRIPT_DIR%.env"
 set "MODEL="
 
 REM Parse args
@@ -86,7 +88,15 @@ if exist "venv\Scripts\activate.bat" (
 )
 
 REM Build startup command
+REM 只有显式传了 -h/-p 才追加 --host/--port（覆盖 .env）；不传就让 app.py
+REM 自己读 FASTAPI_HOST/FASTAPI_PORT，不在这里另设一份默认值跟 .env 打架。
 set "CMD=python app.py --env %ENV_FILE%"
+if not "%HOST%"=="" (
+    set "CMD=%CMD% --host %HOST%"
+)
+if not "%PORT%"=="" (
+    set "CMD=%CMD% --port %PORT%"
+)
 if not "%MODEL%"=="" (
     set "CMD=%CMD% --model %MODEL%"
 )
@@ -95,7 +105,7 @@ echo ========================================
 echo   Chaowei Agent Backend
 echo ========================================
 echo Config file: %ENV_FILE%
-echo Starting AI Report service (%HOST%:%PORT%)...
+echo Starting AI Report service（host/port 未显式指定时以 .env 的 FASTAPI_HOST/FASTAPI_PORT 为准）...
 echo Command: %CMD%
 echo.
 

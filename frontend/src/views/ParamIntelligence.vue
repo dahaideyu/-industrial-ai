@@ -57,19 +57,6 @@
           <p v-if="rangeWarning" class="text-xs text-amber-600 mt-1">{{ rangeWarning }}</p>
         </div>
       </div>
-
-      <!-- 快捷时间范围 -->
-      <div v-if="dataMode === 'features'" class="flex flex-wrap items-center gap-1.5 mt-3">
-        <span class="text-xs text-gray-400 mr-1">快捷范围:</span>
-        <button
-          v-for="r in QUICK_RANGES" :key="r.key"
-          @click="applyQuickRange(r)"
-          class="px-2.5 py-1 rounded-full text-xs font-medium border transition-all"
-          :class="activeQuickRange === r.key
-            ? 'bg-amber-500 text-white border-amber-500'
-            : 'bg-gray-50 text-gray-500 border-gray-200 hover:border-gray-300'"
-        >{{ r.label }}</button>
-      </div>
     </div>
 
     <!-- Tabs -->
@@ -531,29 +518,9 @@ const _initEnd = new Date()
 const _initStart = new Date(_initEnd.getTime() - 24 * 3600 * 1000)
 const startTime = ref(toDatetimeLocal(_initStart))
 const endTime = ref(toDatetimeLocal(_initEnd))
-const activeQuickRange = ref('24h')
 const rangeWarning = ref('')
 
-const QUICK_RANGES = [
-  { key: '1h', label: '近1小时', hours: 1 },
-  { key: '6h', label: '近6小时', hours: 6 },
-  { key: '24h', label: '近24小时', hours: 24 },
-  { key: '3d', label: '近3天', hours: 72 },
-  { key: '7d', label: '近7天', hours: 168 },
-]
-
-function applyQuickRange(r) {
-  const end = new Date()
-  const start = new Date(end.getTime() - r.hours * 3600 * 1000)
-  startTime.value = toDatetimeLocal(start)
-  endTime.value = toDatetimeLocal(end)
-  activeQuickRange.value = r.key
-  rangeWarning.value = ''
-  if (selectedDevice.value) loadData()
-}
-
 function onRangeInputChange() {
-  activeQuickRange.value = 'custom'
   clampRangeWithin7Days()
 }
 

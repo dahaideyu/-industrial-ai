@@ -2,26 +2,37 @@
 # 模型配置 - 为特定报告类型指定不同的 LLM 模型
 # ============================================
 #
-# 默认模型：使用 .env 中的 PROVIDER 配置
-# 此文件只需配置与默认不同的报告类型
+# 默认模型链：未单独配置的报告优先使用 OpenCode，失败后降级到 DeepSeek
 #
 # 配置方式：
-#   provider: "deepseek"           # 读取环境变量
+#   providers:
+#     - "opencode"
+#     - "deepseek"
 #   或
+#   provider_name: "custom_gateway"
 #   base_url: "https://..."
 #   api_key: "your-key"
 #   model: "deepseek-chat"
+#
+# 安全约束：每个候选模型必须独立配置完整的地址、密钥和模型名称，
+# 不会跨供应商混用配置。候选配置缺失时会跳过并继续尝试下一模型。
+
+retry_policy:
+  # 包含首次调用，因此 2 表示“首次失败后再重试一次”
+  max_attempts_per_model: 2
+  backoff_seconds: 2
+  heartbeat_interval_seconds: 10
+
+default_models:
+  - provider: "opencode"
+  - provider: "deepseek"
 
 report_models:
-  # 质量类报告使用 DeepSeek 模型
-  qualityDailyReport:
-    provider: "deepseek"
+  # 早会日报对质量要求高，固定使用 DeepSeek，不再降级到其他模型
+  leanMorningDailyReport:
+    providers:
+      - "deepseek"
 
-  qualityWeeklyReport:
-    provider: "deepseek"
-
-  qualityMonthlyReport:
-    provider: "deepseek"
-
-  leanQualityWeekReport:
-    provider: "deepseek"
+  factoryMorningDailyReport:
+    providers:
+      - "deepseek"

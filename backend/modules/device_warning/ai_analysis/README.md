@@ -19,7 +19,7 @@
 | 环境变量 | 说明 | 默认值 |
 |---------|------|-------|
 | `POSTGRES_HOST` | 主数据库地址 | CHANGE_ME |
-| `POSTGRES_FALLBACK_HOST` | 备用数据库地址 | 218.90.129.90 |
+| `POSTGRES_FALLBACK_HOST` | 备用数据库地址 | CHANGE_ME |
 | `POSTGRES_PORT` | 端口 | 5432 |
 | `POSTGRES_USER` | 用户名 | postgres |
 | `POSTGRES_PASSWORD` | 密码 | (见 .env 文件) |

@@ -1,37 +1,11 @@
-import axios from 'axios'
+import { createApiClient } from './createApiClient.js'
 
-const client = axios.create({
+const client = createApiClient({
   baseURL: '/api/knowledge-management',
   timeout: 120000,
-  headers: { 'Content-Type': 'application/json' },
+  unwrap: true,
+  handle401: false,
 })
-
-// 请求拦截器：自动附加 JWT token
-client.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// 响应拦截器：仅当响应是 success_response 包装时解包 data
-client.interceptors.response.use(
-  (res) => {
-    const body = res.data
-    // 严格的 success_response 包装：必须同时有 code 和 data 字段
-    if (body && typeof body === 'object' && 'code' in body && 'data' in body) {
-      return body.data
-    }
-    // 否则直接返回（如 dashboard 端点返回的纯 dict）
-    return body
-  },
-  (err) => {
-    const msg = err.response?.data?.detail || err.response?.data?.msg || err.message || '请求失败'
-    console.error('Knowledge Management API Error:', msg)
-    return Promise.reject(new Error(msg))
-  }
-)
 
 export default client
 

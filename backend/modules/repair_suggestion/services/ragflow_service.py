@@ -3,7 +3,11 @@ import logging
 import httpx
 import json
 from typing import Optional, Tuple
-from config import Config
+try:
+    from ..config import Config
+except ImportError:
+    # 兼容该服务以独立脚本方式启动。
+    from config import Config
 
 logger = logging.getLogger(__name__)
 

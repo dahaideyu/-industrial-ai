@@ -23,6 +23,12 @@ from backend.core.singletons import get_upstream_client, get_report_generator_si
 from backend.services.report_generator import ReportGenerator
 from backend.core.job_logger import JobLogger
 from backend.core import database as db
+from backend.modules.lean_morning_daily.fourth_report_config import (
+    is_fourth_report_enabled,
+    resolve_template_limit,
+)
+from backend.modules.lean_morning_daily.report_fields import map_reports_to_fields
+from backend.modules.lean_morning_daily.team_schedule import inject_team_schedule_context
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +67,7 @@ class AgentWorker:
         template_limit: int = None,
     ) -> dict:
         """
-        同步执行：拉参 → 加载历史报告 → 生成 3 份报告 → 保存到 SQLite → 映射字段 → 回调上游
+        同步执行：拉参 → 按基地开关生成3或4份报告 → 保存到数据库 → 映射字段 → 回调上游
 
         Args:
             workshop_id: 车间 ID
@@ -90,6 +96,17 @@ class AgentWorker:
 
         job_logger.info("[AgentWorker] 开始执行精益早会日报作业: workshopId=%s, procedureId=%s, reportDate=%s",
             workshop_id, procedure_id, report_date or "默认昨日"
+        )
+
+        fourth_report_enabled = is_fourth_report_enabled()
+        template_limit = resolve_template_limit(template_limit, fourth_report_enabled)
+        fourth_report_generated = fourth_report_enabled and (
+            template_limit is None or template_limit > 3
+        )
+        job_logger.info(
+            "[第四份报告配置] enabled=%s, effectiveTemplateLimit=%s",
+            fourth_report_enabled,
+            template_limit if template_limit is not None else "不限",
         )
 
         upstream_report_id = None
@@ -128,6 +145,11 @@ class AgentWorker:
                 meta["_note"] = "本报告为傍晚版（T+0），数据为当日白班部分数据，供傍晚例会使用。"
                 payload["meta"] = meta
                 job_logger.info("[AgentWorker] 傍晚版：已注入场景标记到 payload.meta")
+            elif fourth_report_generated:
+                # 班组配置只是候选上下文，最终分析维度由第四份报告的模型判断。
+                payload = inject_team_schedule_context(payload, log=job_logger)
+            else:
+                job_logger.info("[第四份报告配置] 当前作业不生成第四份报告，跳过班组排班上下文注入")
 
             # 输出原始数据内容
             import json
@@ -220,7 +242,7 @@ class AgentWorker:
 
         # ---- 阶段 3: 生成报告 ----
         job_logger.info("")
-        job_logger.info("[阶段 3/5] 开始生成报告（共 3 份）...")
+        job_logger.info("[阶段 3/5] 开始生成报告（按模板配置执行）...")
 
         # 数据预处理（clean + map-reduce，复用给 generator 和持久化）
         from backend.utils.data_preprocessor import preprocess_payload
@@ -266,6 +288,8 @@ class AgentWorker:
         callback_fields = {}
         try:
             callback_fields = self._map_to_callback_fields(reports, job_logger=job_logger, template_limit=template_limit)
+            if not fourth_report_generated:
+                callback_fields["teamCompareMarkdown"] = ""
             job_logger.info("  ✅ 回调字段映射完成")
         except Exception as e:
             job_logger.error("[AgentWorker] 映射回调字段失败: %s", e, exc_info=True)
@@ -282,6 +306,7 @@ class AgentWorker:
             "kbReportMarkdown": callback_fields.get("kbReportMarkdown", ""),
             "knowledgeBasePayload": callback_fields.get("knowledgeBasePayload", ""),
             "summaryMarkdown": callback_fields.get("summaryMarkdown", ""),
+            "teamCompareMarkdown": callback_fields.get("teamCompareMarkdown", ""),
             "agentResponseRaw": json.dumps({"reports": reports}, ensure_ascii=False),
             "errorMessage": error_msg,
         }, ensure_ascii=False)
@@ -304,6 +329,7 @@ class AgentWorker:
                 markdown_content=callback_fields.get("markdownContent", ""),
                 summary_markdown=callback_fields.get("summaryMarkdown", ""),
                 kb_report_markdown=callback_fields.get("kbReportMarkdown", ""),
+                team_compare_markdown=callback_fields.get("teamCompareMarkdown", ""),
                 knowledge_base_payload=callback_fields.get("knowledgeBasePayload", ""),
                 status=status,
                 error_message=error_msg,
@@ -330,6 +356,7 @@ class AgentWorker:
                 markdown_content=callback_fields.get("markdownContent", ""),
                 summary_markdown=callback_fields.get("summaryMarkdown", ""),
                 kb_report_markdown=callback_fields.get("kbReportMarkdown", ""),
+                team_compare_markdown=callback_fields.get("teamCompareMarkdown", ""),
                 knowledge_base_payload=callback_fields.get("knowledgeBasePayload", ""),
                 agent_response_raw=json.dumps({"reports": reports}, ensure_ascii=False),
                 error_message=error_msg,
@@ -1266,37 +1293,23 @@ class AgentWorker:
 
     def _map_to_callback_fields(self, reports: list, job_logger=None, template_limit: int = None) -> dict:
         """
-        按方案第 2 节规则，将 3 份报告映射到回调字段
+        将4份精益早会日报映射到内部字段。
 
-        映射规则（已修正: kb开头的字段对应第3份，因第3份使用知识库检索）:
+        映射规则：
         - 第1份 (index 0): 日会早报（基础日报） → markdownContent
         - 第2份 (index 1): 日会早报趋势分析 → summaryMarkdown
         - 第3份 (index 2): 日会早报改善建议 → kbReportMarkdown + knowledgeBasePayload
-
-        若某份报告缺失或生成失败，内容记为错误提示，仍按规则填入对应字段。
+        - 第4份 (index 3): 班次/班组绩效对比 → teamCompareMarkdown
 
         Args:
             reports: 报告列表
+            job_logger: 可选作业日志器。
+            template_limit: 模板数量限制。
 
         Returns:
-            回调字段字典
+            内部报告字段字典。
         """
-        def _get_content(index: int, fallback_msg: str) -> str:
-            """安全获取指定索引报告的内容"""
-            if index < len(reports):
-                return reports[index].get("content", fallback_msg)
-            return fallback_msg
-
-        def _get_citations_json(index: int) -> str:
-            """安全获取指定索引报告的 citations JSON"""
-            if index < len(reports):
-                citations = reports[index].get("citations", [])
-                return json.dumps(citations, ensure_ascii=False) if citations else ""
-            return ""
-
         log = job_logger or logger
-
-        # 打印调试：第3份（index 2，使用知识库）报告的引用信息
         citations2 = reports[2].get("citations", []) if len(reports) > 2 else []
         log.info("")
         log.info("[回调字段映射] 第3份报告（知识库引用）citations: %d 条", len(citations2))
@@ -1305,26 +1318,12 @@ class AgentWorker:
             for i, cite in enumerate(citations2[:3]):
                 log.info("  [%d] %s", i+1, cite.get('source', '未知来源'))
 
-        # 构建回调字段（傍晚版仅1份报告时，其余字段用跳过消息而非"生成失败"）
-        if template_limit is not None and template_limit <= 1:
-            skip_msg = "傍晚版仅生成基础日报（此报告无需生成）"
-            result = {
-                "markdownContent": _get_content(0, "日会早报生成失败"),   # 第1份：基础日报
-                "summaryMarkdown": _get_content(1, skip_msg),             # 傍晚版未生成
-                "kbReportMarkdown": _get_content(2, skip_msg),            # 傍晚版未生成
-                "knowledgeBasePayload": _get_citations_json(2),
-            }
-        else:
-            result = {
-                "markdownContent": _get_content(0, "日会早报生成失败"),      # 第1份：基础日报
-                "summaryMarkdown": _get_content(1, "日会早报趋势分析生成失败"), # 第2份：趋势分析
-                "kbReportMarkdown": _get_content(2, "日会早报改善建议生成失败"), # 第3份：改善建议（带知识库）
-                "knowledgeBasePayload": _get_citations_json(2),                   # 第3份的引用数据
-            }
+        result = map_reports_to_fields(reports, template_limit=template_limit)
 
         log.info("[回调字段映射] markdownContent: %d 字", len(result['markdownContent']))
         log.info("[回调字段映射] summaryMarkdown: %d 字", len(result['summaryMarkdown']))
         log.info("[回调字段映射] kbReportMarkdown: %d 字", len(result['kbReportMarkdown']))
+        log.info("[回调字段映射] teamCompareMarkdown: %d 字", len(result['teamCompareMarkdown']))
         log.info("[回调字段映射] knowledgeBasePayload: %d 字符", len(result['knowledgeBasePayload']))
         log.info("")
 

@@ -98,14 +98,14 @@ async def get_repair_suggestion(request: RepairSuggestionRequest):
 
         # 3. 生成最终建议
         logger.info("[API] 第三步：生成维修建议")
-        from services import DeepSeekService
-        deepseek = DeepSeekService()
-        conclusion, suggestion, suggest_err = await deepseek.generate_repair_suggestion(
-            request.device_name,
-            request.device_type,
-            request.fault_description,
-            history_content if not history_err else None,
-            doc_content if not doc_err else None,
+        from services import LLMService
+        llm_service = LLMService()
+        conclusion, suggestion, suggest_err = await llm_service.generate_repair_suggestion(
+            device_name=request.device_name,
+            fault_description=request.fault_description,
+            history_content=history_content if not history_err else None,
+            doc_content=doc_content if not doc_err else None,
+            device_type=request.device_type,
         )
 
         if suggest_err:
@@ -182,9 +182,9 @@ async def get_task_suggestion(request: TaskSuggestionRequest):
 
         # 2. 生成任务建议
         logger.info("[API] 第二步：生成任务改善建议")
-        from services import DeepSeekService
-        deepseek = DeepSeekService()
-        conclusion, context, suggest_err = await deepseek.generate_task_suggestion(
+        from services import LLMService
+        llm_service = LLMService()
+        conclusion, context, suggest_err = await llm_service.generate_task_suggestion(
             request.procedure,
             request.task_type,
             request.task_description,

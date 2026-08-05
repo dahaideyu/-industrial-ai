@@ -150,6 +150,66 @@ async def _query_knowledge_base_async(device_name: str, params_summary: str) -> 
     return await loop.run_in_executor(_kb_executor, _do_query)
 
 
+import threading as _threading
+import time as _time
+
+_KB_CACHE: Dict[tuple, tuple] = {}            # (device_name, question) -> (expire_ts, answer)
+_KB_INFLIGHT: Dict[tuple, Any] = {}           # (device_name, question) -> Event，正在查询中
+_KB_CACHE_LOCK = _threading.Lock()
+_KB_CACHE_TTL = 3600.0                         # 工艺文档不会分钟级变化，1 小时足够
+_KB_CACHE_MAX = 256
+_KB_WAIT_TIMEOUT = 120.0
+
+
+def query_knowledge_base(device_name: str, question: str) -> Optional[str]:
+    """带缓存 + single-flight 的知识库检索。
+
+    为什么要缓存：一次 KPI 分析里 `_kpi_ai_insight` 会被调用 (型号数+1) 次，
+    而它问的问题是**硬编码常量**，每次检索结果必然相同；阶段分析则每阶段问一次。
+
+    为什么还要 single-flight：这些调用现在是并发发出的，光有缓存会被击穿 ——
+    N 个请求同时未命中、同时去打 RAGFlow，缓存等于没起作用。这里让同一 key 只放
+    一个请求真正出去，其余等它的结果。
+    """
+    key = (device_name or "", question or "")
+    now = _time.monotonic()
+
+    with _KB_CACHE_LOCK:
+        hit = _KB_CACHE.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+        ev = _KB_INFLIGHT.get(key)
+        leader = ev is None
+        if leader:
+            ev = _threading.Event()
+            _KB_INFLIGHT[key] = ev
+
+    if not leader:                             # 跟随者：等 leader 查回来直接用
+        ev.wait(timeout=_KB_WAIT_TIMEOUT)
+        with _KB_CACHE_LOCK:
+            hit = _KB_CACHE.get(key)
+        return hit[1] if hit else None
+
+    answer = None
+    try:
+        answer = _query_knowledge_base_sync(device_name, question)
+    except Exception as e:
+        print(f"[知识库] 检索失败 device={device_name}: {e}")
+    finally:
+        # 必须无条件唤醒等待者并清掉 inflight，否则一次异常会让后续同 key 的
+        # 请求全部卡在 ev.wait() 上直到超时
+        with _KB_CACHE_LOCK:
+            if len(_KB_CACHE) >= _KB_CACHE_MAX:    # 容量控制：先清过期，仍超限则整体清空
+                for k in [k for k, v in _KB_CACHE.items() if v[0] <= now]:
+                    _KB_CACHE.pop(k, None)
+                if len(_KB_CACHE) >= _KB_CACHE_MAX:
+                    _KB_CACHE.clear()
+            _KB_CACHE[key] = (now + _KB_CACHE_TTL, answer)
+            _KB_INFLIGHT.pop(key, None)
+        ev.set()
+    return answer
+
+
 def _query_knowledge_base_sync(device_name: str, params_summary: str) -> Optional[str]:
     """从知识库（RAGFlow）检索设备工艺文档，作为 LLM 分析的参考上下文。"""
     chat_id = os.getenv("DEVICE_PARAM_KB_CHAT_ID") or os.getenv("RAGFLOW_DOC_ASSISTANT_ID")
@@ -296,33 +356,71 @@ async def screen_params(
     from psycopg2.extras import RealDictCursor
     import statistics as stats_mod
     from .services import TimescaleDB
+    from . import tuning
+
+    # 阈值全部来自按设备的可调配置（未配置则用默认值），工艺可自助调整不必改代码
+    tcfg = tuning.load(conn, device_code)
 
     end = datetime.now()
     start = end - timedelta(days=days)
 
     # 该设备定义的全部参数点位（含关联电表），不依赖是否有数据
     all_p_names: List[str] = []
+    display_name_map: Dict[str, str] = {}
+    meter_ids: List[str] = []
     try:
         _points_db = TimescaleDB()
         _points_db.conn = conn
-        all_p_names = [p["p_name"] for p in _points_db.get_points(device_code)]
+        _points = _points_db.get_points(device_code)
+        all_p_names = [p["p_name"] for p in _points]
+        display_name_map = {p["p_name"]: p.get("display_name") or p["p_name"] for p in _points}
+        meter_ids = _points_db.get_energy_device_ids(device_code)
     except Exception:
         all_p_names = []
 
+    _ENERGY_WHITELIST = ("ene_eptotal", "ene_imp")
+
     # === Phase 1: 快速统计 + 启发式筛选（近 days 天窗口）===
+    # 每参数公平采样(ROW_NUMBER PARTITION BY)：高频参数不会霸占全部 LIMIT 配额，
+    # 低频参数(如设定值/残余量)也能拿到自己的全部数据点。同时取 point_time 供
+    # 后续"同变参数"关联分析使用。
+    _PER_PARAM_LIMIT = tcfg["screen_per_param_limit"]
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SET statement_timeout = '30s'")
-            cur.execute("""
+            alarm_select = """
                 SELECT a.point_id AS p_name,
-                       a.point_value::double precision AS v
+                       COALESCE(a.point_value_full, a.point_value)::double precision AS v,
+                       a.point_time
                 FROM device_alarm_info a
                 WHERE a.device_id = %s
                   AND a.point_time >= %s AND a.point_time <= %s
                   AND a.point_value IS NOT NULL
-                ORDER BY a.point_time
-                LIMIT 50000
-            """, (device_code, start, end))
+            """
+            selects = [alarm_select]
+            params: list = [device_code, start, end]
+            if meter_ids:
+                selects.append("""
+                    SELECT e.point_id AS p_name,
+                           e.point_value::double precision AS v,
+                           e.point_time
+                    FROM device_energy_info e
+                    WHERE e.device_id = ANY(%s)
+                      AND e.point_time >= %s AND e.point_time <= %s
+                      AND e.point_id = ANY(%s)
+                      AND e.point_value IS NOT NULL
+                """)
+                params.extend([meter_ids, start, end, list(_ENERGY_WHITELIST)])
+            union_sql = " UNION ALL ".join(f"({s})" for s in selects)
+            cur.execute(f"""
+                SELECT p_name, v, point_time FROM (
+                    SELECT p_name, v, point_time,
+                           ROW_NUMBER() OVER (PARTITION BY p_name ORDER BY point_time DESC) AS rn
+                    FROM ({union_sql}) combined
+                ) ranked
+                WHERE rn <= %s
+                ORDER BY p_name, point_time
+            """, params + [_PER_PARAM_LIMIT])
             rows = cur.fetchall()
     except Exception as e:
         return {"error": f"查询失败: {e}", "step": 1}
@@ -330,10 +428,12 @@ async def screen_params(
     if not rows and not all_p_names:
         return {"error": "该设备在指定时间范围内无数据", "step": 1}
 
-    # 按参数分组
+    # 按参数分组（同时保留时间戳，供关联分析）
     param_vals: Dict[str, List[float]] = {}
+    param_times: Dict[str, List[Any]] = {}
     for r in rows:
         param_vals.setdefault(r["p_name"], []).append(r["v"])
+        param_times.setdefault(r["p_name"], []).append(r["point_time"])
 
     # 近窗口没数据、但设备定义里有的参数：回退拉各自最近一批历史数据（不限定日期），
     # 避免"因为最近没数据就不显示"
@@ -343,10 +443,11 @@ async def screen_params(
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("SET statement_timeout = '15s'")
+                # 工艺点位
                 cur.execute("""
                     SELECT p_name, v, point_time FROM (
                         SELECT a.point_id AS p_name,
-                               a.point_value::double precision AS v,
+                               COALESCE(a.point_value_full, a.point_value)::double precision AS v,
                                a.point_time,
                                ROW_NUMBER() OVER (PARTITION BY a.point_id ORDER BY a.point_time DESC) AS rn
                         FROM device_alarm_info a
@@ -360,19 +461,57 @@ async def screen_params(
                     prev = stale_last_seen.get(r["p_name"])
                     if prev is None or r["point_time"] > prev:
                         stale_last_seen[r["p_name"]] = r["point_time"]
-        except Exception:
-            pass
+                # 能耗点位（有关联电表时）
+                if meter_ids:
+                    energy_missing = [p for p in missing if p in _ENERGY_WHITELIST]
+                    if energy_missing:
+                        cur.execute("""
+                            SELECT p_name, v, point_time FROM (
+                                SELECT e.point_id AS p_name,
+                                       e.point_value::double precision AS v,
+                                       e.point_time,
+                                       ROW_NUMBER() OVER (PARTITION BY e.point_id ORDER BY e.point_time DESC) AS rn
+                                FROM device_energy_info e
+                                WHERE e.device_id = ANY(%s) AND e.point_id = ANY(%s) AND e.point_value IS NOT NULL
+                            ) t
+                            WHERE rn <= 500
+                            ORDER BY point_time
+                        """, (meter_ids, energy_missing))
+                        for r in cur.fetchall():
+                            param_vals.setdefault(r["p_name"], []).append(r["v"])
+                            prev = stale_last_seen.get(r["p_name"])
+                            if prev is None or r["point_time"] > prev:
+                                stale_last_seen[r["p_name"]] = r["point_time"]
+        except Exception as e:
+            # 历史数据回退失败不致命（这些参数会被标 nodata），但必须留痕，
+            # 否则"某些参数莫名其妙没数据"永远查不出原因
+            print(f"[参数筛选] 历史数据回退查询失败 device={device_code}: {e}")
 
     # 启发式规则（不调 LLM，纯 Python，秒级）
+    # 分类规则：直白描述参数行为模式，不再用"经营管理"等抽象词
     HEURISTIC_RULES = [
-        # (条件函数, 分类结果, 理由)
-        (lambda f: f["uniq"] <= 1, "useless", "值完全不变"),
-        (lambda f: f["range_ratio"] < 0.01 and f["change_rate"] < 0.01, "useless", "极差<1%且几乎不变"),
-        (lambda f: f["n"] < 10, "useless", "数据点不足"),
-        (lambda f: abs(f["trend"]) > 0.02 and f["range_ratio"] > 0.1, "predictive", "有明显趋势+足够波动"),
-        (lambda f: f["range_ratio"] > 0.3 and f["change_rate"] > 0.2, "quality", "波动大变化频繁(质量相关)"),
-        (lambda f: f["range_ratio"] > 0.3 and f["change_rate"] <= 0.05, "management", "波动大但变化慢(经营相关)"),
+        # (条件函数, 形态, 理由)
+        # 数据不足必须排在最前且单独成类：样本太少时下面所有判断都不可靠。
+        # 原来它被归成 constant("值完全不变")并因此自动取消勾选 ——
+        # "我还不知道它变不变"被当成了"它确实不变"，是把未知冒充成已知。
+        (lambda f: f["n"] < 10, "insufficient", "数据点不足(<10)，无法判断形态"),
+        (lambda f: f["uniq"] <= 1, "constant", "值完全不变"),
+        (lambda f: f["range_ratio"] < tcfg["flat_range_ratio"] and f["change_rate"] < 0.01,
+         "constant", f"极差<{tcfg['flat_range_ratio']:.0%}且几乎不变"),
+        (lambda f: f["directionality"] >= 0.5, "increasing", "持续递增"),
+        (lambda f: f["directionality"] <= -0.5, "decreasing", "持续递减"),
     ]
+
+    # 参数画像（ptype/category）：purpose 推断要用。没生成过画像也不影响，
+    # 那时只靠形态 + 命名规则推断，置信度自然偏低，交给 Phase2 补。
+    profile_map: Dict[str, Dict[str, Any]] = {}
+    try:
+        from . import param_profile as _pp
+        for _prof in _pp.load_profiles(conn, device_code):
+            if _prof.get("p_name"):
+                profile_map[_prof["p_name"]] = _prof
+    except Exception as e:
+        print(f"[参数筛选] 读取参数画像失败（purpose 将只按命名推断）: {e}")
 
     classified = []
     for p_name, vals in param_vals.items():
@@ -384,6 +523,16 @@ async def screen_params(
         rng_ratio = (vmax - vmin) / (abs(mean_val) + 0.001) if mean_val != 0 else 0
         changes = sum(1 for i in range(1, n) if vals[i] != vals[i-1])
         change_rate = changes / (n - 1) if n > 1 else 0
+        # 方向占比：判断递增/递减/波动。
+        # 用"净漂移/总波动"而非"上涨步数占比"：带批次升降(0→800再回落)的实时重量
+        # 即使上涨步数略多，净漂移也接近0，不会被误判为持续递增。
+        inc_steps = sum(1 for i in range(1, n) if vals[i] > vals[i-1])
+        dec_steps = sum(1 for i in range(1, n) if vals[i] < vals[i-1])
+        _dir_total = inc_steps + dec_steps
+        inc_ratio = inc_steps / _dir_total if _dir_total > 0 else 0
+        dec_ratio = dec_steps / _dir_total if _dir_total > 0 else 0
+        _total_var = sum(abs(vals[i] - vals[i-1]) for i in range(1, n))
+        directionality = (vals[-1] - vals[0]) / _total_var if _total_var > 0 else 0
         trend = 0.0
         if n > 10 and std_val > 0:
             xm = (n - 1) / 2; ym = mean_val
@@ -393,14 +542,35 @@ async def screen_params(
                 trend = num / den * n / (abs(mean_val) + 0.001)
 
         f = {"n": n, "uniq": uniq, "range_ratio": rng_ratio,
-             "change_rate": change_rate, "trend": trend}
+             "change_rate": change_rate, "trend": trend,
+             "inc_ratio": inc_ratio, "dec_ratio": dec_ratio,
+             "directionality": directionality}
 
-        # 匹配第一条规则
-        cat, reason = "management", "有变化可关注"
-        for rule_fn, rule_cat, rule_reason in HEURISTIC_RULES:
-            if rule_fn(f):
-                cat, reason = rule_cat, rule_reason
-                break
+        # 脉冲型检测：阶梯状 + 循环规律 + 周期往复（三大特征）
+        # 只对疑似阶梯参数(平坦率>50%、离散值少)做深度分析，避免连续参数浪费算力
+        cat, reason = "fluctuating", "上下波动"
+        flat_ratio = 1 - change_rate
+        pulse_detected = False
+        if n >= tcfg["pulse_min_points"] and 1 < uniq <= 100 and flat_ratio > 0.5:
+            _times = param_times.get(p_name, [])
+            if _times and len(_times) == n:
+                _pf = _analyze_pulse_features(vals, _times)
+                if (_pf and _pf["step_score"] > tcfg["pulse_step_score"]
+                        and _pf.get("cycle_score", 0) > tcfg["pulse_cycle_score"]):
+                    cat = "pulse"
+                    _parts = []
+                    if _pf.get("pattern_match_rate", 0) >= 0.6:
+                        _parts.append(f"循环匹配{_pf['pattern_match_rate']:.0%}")
+                    if _pf.get("cycle_minutes"):
+                        _parts.append(f"周期≈{_pf['cycle_minutes']}分钟")
+                    reason = f"脉冲型：阶梯循环" + (f"（{'，'.join(_parts)}）" if _parts else "")
+                    pulse_detected = True
+
+        if not pulse_detected:
+            for rule_fn, rule_cat, rule_reason in HEURISTIC_RULES:
+                if rule_fn(f):
+                    cat, reason = rule_cat, rule_reason
+                    break
 
         is_stale = p_name in stale_last_seen
         if is_stale:
@@ -408,9 +578,13 @@ async def screen_params(
 
         classified.append({
             "p_name": p_name,
+            # shape 是新名字（形态）；category 保留同值，兼容已保存的筛选状态和旧前端
+            "shape": cat,
             "category": cat,
             "reason": reason,
-            "checked": cat != "useless",
+            # insufficient 默认不勾选，但它和 constant 的含义不同：前者是"还不知道"，
+            # 前端会单独标出来提示补数据后再看
+            "checked": cat not in ("constant", "nodata", "insufficient"),
             "n": n, "uniq": uniq,
             "vmin": round(vmin, 2), "vmax": round(vmax, 2),
             "mean": round(mean_val, 2), "std": round(std_val, 2),
@@ -426,6 +600,7 @@ async def screen_params(
         if p_name not in param_vals:
             classified.append({
                 "p_name": p_name,
+                "shape": "nodata",
                 "category": "nodata",
                 "reason": "无历史数据",
                 "checked": False,
@@ -435,50 +610,292 @@ async def screen_params(
                 "stale": False, "last_seen": None,
             })
 
-    classified.sort(key=lambda x: (x["category"] in ("useless", "nodata"), -x["range_ratio"]))
+    classified.sort(key=lambda x: (x["category"] in ("constant", "nodata"), -x["range_ratio"]))
+
+    # === 同变参数分组：检测哪些参数在相近时刻一起变化（如配方/批次切换时一组设定值同时刷新）===
+    # 方法：提取每个参数值变化的时刻(按 10 秒桶取整)，两两计算 Jaccard 相似度
+    # (交集/并集)。Jaccard 天然惩罚不对称：几乎不变的参数(仅2-3次跳变)即使碰巧
+    # 对上活跃参数的时刻，相似度也很低，不会被误归同组。另要求每方至少 4 次跳变。
+    # 相似度≥0.8 才判为"同步变化"，并在输出里附上每对的相似度分数。
+    co_change_groups: Dict[str, List[str]] = {}
+    co_change_scores: Dict[str, Dict[str, float]] = {}
+    try:
+        from collections import defaultdict as _dd
+        _TRANSITION_BUCKET_SEC = tcfg["co_change_bucket_sec"]
+        _MIN_TRANSITIONS = tcfg["co_change_min_transitions"]
+        _JACCARD_THRESHOLD = tcfg["co_change_jaccard"]
+        param_transitions: Dict[str, set] = {}
+        for p_name, times in param_times.items():
+            vals = param_vals[p_name]
+            if len(vals) < 2:
+                continue
+            buckets = set()
+            for i in range(1, len(vals)):
+                if vals[i] != vals[i - 1]:
+                    buckets.add(int(times[i].timestamp() / _TRANSITION_BUCKET_SEC))
+            if len(buckets) >= _MIN_TRANSITIONS:
+                param_transitions[p_name] = buckets
+
+        _adj = _dd(set)
+        _sim: Dict[tuple, float] = {}
+        _pn = list(param_transitions.keys())
+        for i in range(len(_pn)):
+            for j in range(i + 1, len(_pn)):
+                a, b = _pn[i], _pn[j]
+                ta, tb = param_transitions[a], param_transitions[b]
+                overlap = len(ta & tb)
+                union = len(ta | tb)
+                if union > 0:
+                    sim = overlap / union
+                    if sim >= _JACCARD_THRESHOLD:
+                        _adj[a].add(b)
+                        _adj[b].add(a)
+                        _sim[(a, b)] = round(sim, 3)
+
+        _visited: set = set()
+        for p in _pn:
+            if p in _visited or p not in _adj:
+                continue
+            comp: set = set()
+            queue = [p]
+            while queue:
+                node = queue.pop()
+                if node in _visited:
+                    continue
+                _visited.add(node)
+                comp.add(node)
+                queue.extend(n for n in _adj[node] if n not in _visited)
+            if len(comp) >= 2:
+                members = sorted(comp)
+                for m in members:
+                    peers = [x for x in members if x != m]
+                    co_change_groups[m] = peers
+                    scores = {}
+                    for x in peers:
+                        key = (m, x) if m < x else (x, m)
+                        scores[x] = _sim.get(key, 0.0)
+                    co_change_scores[m] = scores
+
+        # 把同变信息追加到 classified 的 reason 里（用中文名 + 相似度分数）
+        group_label_map = {}  # p_name -> 简短标签
+        for p_name, peers in co_change_groups.items():
+            peer_labels = [
+                f"{display_name_map.get(x, x)}({co_change_scores[p_name].get(x, 0):.0%})"
+                for x in peers[:4]
+            ]
+            short = ", ".join(peer_labels) + ("…" if len(peers) > 4 else "")
+            group_label_map[p_name] = f"与 {short} 同步变化"
+        for c in classified:
+            label = group_label_map.get(c["p_name"])
+            if label:
+                c["co_change"] = co_change_groups[c["p_name"]]
+                c["co_change_scores"] = co_change_scores[c["p_name"]]
+                c["reason"] = f"{c['reason']}；{label}"
+            else:
+                c["co_change"] = []
+    except Exception as e:
+        print(f"[参数筛选] 同变参数分组失败 device={device_code}: {e}")
+        for c in classified:
+            c.setdefault("co_change", [])
+            c.setdefault("co_change_scores", {})
+
+    # === 用途推断 ===
+    # 放在同变分组之后：配方设定值的判据之一就是"跟着一组参数同时跳变"。
+    # 人工设定 > 画像已确认 > 规则推断 —— 人的判断永远不被自动结果覆盖，
+    # 否则工艺改一次、重新筛选一次就被冲掉，没人会再愿意维护它。
+    saved_manual: Dict[str, str] = {}
+    try:
+        _saved = load_screen_state(conn, device_code) or {}
+        for _c in (_saved.get("classified") or []):
+            if _c.get("purpose_confidence") == "manual" and _c.get("purpose") in VALID_PURPOSES:
+                saved_manual[_c.get("p_name")] = _c["purpose"]
+    except Exception as e:
+        print(f"[参数筛选] 读取已保存用途失败（将全部按规则推断）: {e}")
+
+    for c in classified:
+        pn = c["p_name"]
+        prof = profile_map.get(pn) or {}
+        if pn in saved_manual:
+            c["purpose"] = saved_manual[pn]
+            c["purpose_label"] = PURPOSE_LABELS[saved_manual[pn]]
+            c["purpose_reason"] = "人工设定"
+            c["purpose_confidence"] = "manual"
+            continue
+        confirmed_purpose = prof.get("purpose") if prof.get("confirmed") else None
+        if confirmed_purpose in VALID_PURPOSES:
+            c["purpose"] = confirmed_purpose
+            c["purpose_label"] = PURPOSE_LABELS[confirmed_purpose]
+            c["purpose_reason"] = "工艺已确认"
+            c["purpose_confidence"] = "confirmed"
+            continue
+        purpose, why, conf = _infer_purpose(
+            pn, display_name_map.get(pn, ""), c["shape"], prof, bool(c.get("co_change")))
+        c["purpose"] = purpose
+        c["purpose_label"] = PURPOSE_LABELS[purpose]
+        c["purpose_reason"] = why
+        c["purpose_confidence"] = conf
 
     result = {
         "step": 1, "days": days,
         "classified": classified,
         "summary": _make_summary(classified),
-        "source": "heuristic",
+        "purpose_summary": _make_purpose_summary(classified),
+        "sample_info": f"每参数≤{_PER_PARAM_LIMIT}点 · 最近{days}天",
+        # 形态分类**永远**由启发式决定，LLM 不参与 —— 它只看得到聚合统计，
+        # 反复把噪声读成趋势。这个字段如实反映形态的来源。
+        "shape_source": "heuristic",
+        "purpose_source": "rules",
     }
 
-    # === Phase 2: LLM 增强（可选，失败不影响） ===
-    try:
-        useful = [c for c in classified if c["category"] not in ("useless", "nodata")]
-        if len(useful) >= 3:
-            params_text = "\n".join(
-                f"{c['p_name']}: n={c['n']} range={c['range_ratio']} chg={c['change_rate']} trend={c['trend']}"
-                for c in useful[:20]
+    # === Phase 2: LLM 推断用途（只处理规则判不准的参数） ===
+    # 原来这里让 LLM 往 reason 里追加一句装饰性文案，还把 source 标成 "ai"，
+    # 让前端显示"AI 分类"——付出了成本和延迟，产出只是文案，还给了错误印象。
+    # 现在它干一件真正需要工艺知识、规则做不到的事：判断这个参数是用来干什么的。
+    # 形态分类依旧禁止 LLM 改动。
+    undecided = [c for c in classified
+                 if c.get("purpose_confidence") == "low" and c["shape"] not in ("nodata", "insufficient")]
+    if undecided:
+        try:
+            listing = "\n".join(
+                f"- {c['p_name']}（{display_name_map.get(c['p_name'], c['p_name'])}）："
+                f"形态={c['shape']}，均值={c['mean']}，极差比={c['range_ratio']}，"
+                f"当前推测={c['purpose']}"
+                for c in undecided[:30]
             )
-            kb = await _query_knowledge_base_async(device_name, params_text[:600])
-            llm = get_llm()
-            prompt = f"""设备{device_name}，{days}天数据。以下参数已被粗筛标记，请做精细化分类：
-{"知识库参考：" + kb[:400] if kb else ""}
-参数: {params_text[:1500]}
+            kb = await _query_knowledge_base_async(device_name, listing[:600])
+            options = "、".join(f"{k}({v})" for k, v in PURPOSE_LABELS.items())
+            prompt = f"""设备：{device_name}。下面这些参数的**用途**用规则判断不准，请你结合工艺知识判断。
 
-用JSON修正分类，只改你认为标记错的：{{"refined":[{{"p_name":"...","category":"predictive|quality|management|useless","reason":"..."}}]}}"""
+可选用途只有这几个：{options}
+
+判断依据：
+- pace：标记生产阶段/循环节拍的信号
+- quality：需要盯规格上下限、做 SPC/CPK 的工艺量
+- output：产量、物料重量、计数
+- energy：电能/能耗计量
+- recipe：配方设定值，换产品时整组变化，本身不算异常
+- health：反映设备劣化的量（振动、电流、温升等）
+- ignore：与分析无关
+
+参数列表：
+{listing}
+{("知识库参考：" + kb[:400]) if kb else ""}
+
+只返回JSON，不要解释：{{"items":[{{"p_name":"...","purpose":"上面7个之一","why":"不超过15字的理由"}}]}}"""
+            llm = get_llm()
             resp = await llm.chat.completions.create(
                 model=CONFIG["model"], messages=[{"role": "user", "content": prompt}],
-                temperature=0.1, max_tokens=800,
+                temperature=0.2, max_tokens=900,
             )
             import re
-            m = re.search(r'\{[\s\S]*\}', resp.choices[0].message.content)
+            m = re.search(r'\{[\s\S]*\}', resp.choices[0].message.content or "")
+            applied = 0
             if m:
-                refined = json.loads(m.group()).get("refined", [])
-                ref_map = {r["p_name"]: r for r in refined}
-                for c in classified:
-                    if c["p_name"] in ref_map:
-                        c["category"] = ref_map[c["p_name"]].get("category", c["category"])
-                        c["reason"] = ref_map[c["p_name"]].get("reason", c["reason"])
-                        c["checked"] = c["category"] != "useless"
-                result["source"] = "ai"
-                result["summary"] = _make_summary(classified)
-    except Exception:
-        pass
+                by_name = {c["p_name"]: c for c in undecided}
+                for item in json.loads(m.group()).get("items", []):
+                    c = by_name.get(item.get("p_name"))
+                    pv = item.get("purpose")
+                    # 只接受合法取值，LLM 编出来的新类别一律丢弃
+                    if c is None or pv not in VALID_PURPOSES:
+                        continue
+                    c["purpose"] = pv
+                    c["purpose_label"] = PURPOSE_LABELS[pv]
+                    c["purpose_reason"] = (item.get("why") or "AI 结合工艺知识判断")[:30]
+                    c["purpose_confidence"] = "ai"
+                    applied += 1
+            if applied:
+                result["purpose_source"] = "rules+ai"
+                result["purpose_ai_count"] = applied
+                result["purpose_summary"] = _make_purpose_summary(classified)
+        except Exception as e:
+            # 用途推断失败不影响筛选结果（规则给的初值仍在），但要留痕
+            print(f"[参数筛选] LLM 用途推断失败 device={device_code}: {e}")
 
     return result
+
+
+# ══════════════════════════════════════════════════════════
+# 参数的四个正交维度
+#
+#   shape    形态   —— 波形长什么样（本模块启发式判定，全自动）
+#                      决定：能不能当脉搏、要不要算漂移、用什么图
+#   ptype    信号类型 —— switch/state/counter/setpoint/continuous（param_profile 判定）
+#                      决定：能不能做 CPK、是不是累计量
+#   category 物理量 —— temperature/weight/power/...（param_profile 判定）
+#                      决定：单位、聚合方式
+#   purpose  用途   —— 归谁管、报表归口、告警路由（规则建议 + 人工确认）
+#
+# 前三个都是"这个信号是什么"，只有 purpose 回答"拿它干什么"。
+# 精益上指标必须能驱动行动："这是波动类参数"不指向任何动作，
+# "这是质量管控参数"才指向质量工程师和 SPC 告警。
+# ══════════════════════════════════════════════════════════
+
+PURPOSE_LABELS = {
+    "pace": "节拍基准",
+    "quality": "质量管控",
+    "output": "产量计量",
+    "energy": "能耗计量",
+    "recipe": "配方设定",
+    "health": "设备健康",
+    "ignore": "不纳入分析",
+}
+VALID_PURPOSES = set(PURPOSE_LABELS)
+
+_ENERGY_PREFIXES = ("ene_", "energy_", "kwh")
+_HEALTH_KEYWORDS = ("振动", "轴承", "电流", "温升", "油压", "磨损")
+_OUTPUT_KEYWORDS = ("重量", "称", "产量", "计数", "累计量", "料")
+
+
+def _infer_purpose(p_name: str, display_name: str, shape: str,
+                   prof: Optional[Dict[str, Any]], has_co_change: bool):
+    """由 形态 + 信号类型 + 物理量 + 命名 推断用途。
+
+    返回 (purpose, reason, confidence)。confidence='low' 的交给 Phase2 让 LLM 结合
+    工艺知识判断 —— 那才是 LLM 在这里唯一有价值的活，比生成装饰性文案强得多。
+    """
+    prof = prof or {}
+    ptype = prof.get("ptype") or ""
+    category = prof.get("category") or ""
+    is_stage = bool(prof.get("is_stage_param"))
+    name = f"{p_name} {display_name or ''}".lower()
+    cn = display_name or ""
+
+    # 1) 能耗计量：命名前缀最可靠，其次是"功率类累计量"
+    if any(name.startswith(x) or f" {x}" in name for x in _ENERGY_PREFIXES):
+        return "energy", "能耗点位命名", "high"
+    if category == "power" and ptype == "counter":
+        return "energy", "功率类累计量", "high"
+
+    # 2) 节拍基准：阶段码/状态机，是所有周期分析的锚点
+    if is_stage or ptype == "state" or shape == "pulse":
+        return "pace", "阶段码/脉冲型信号", "high"
+
+    # 3) 产量计量：重量参数已被空跑判定实际使用
+    if category == "weight" or any(k in cn for k in _OUTPUT_KEYWORDS):
+        return "output", "物料重量/计数", "high"
+
+    # 4) 配方设定：设定值，或"跟着一组参数同时跳变"的常量（换配方时整组刷新）
+    if ptype == "setpoint":
+        return "recipe", "设定值类型", "high"
+    if has_co_change and shape in ("constant", "fluctuating"):
+        return "recipe", "与其它参数同步跳变（疑似配方切换）", "medium"
+
+    # 5) 设备健康：振动/电流/温升这类看劣化趋势的
+    if any(k in cn for k in _HEALTH_KEYWORDS):
+        return "health", "设备健康类命名", "medium"
+    if category == "speed":
+        return "health", "转速类", "low"
+
+    # 6) 质量管控：连续工艺量，要做 SPC/CPK
+    if category in ("temperature", "pressure", "vacuum", "flow", "level"):
+        return "quality", f"连续工艺量({category})", "high"
+
+    # 7) 没信息量的直接排除
+    if shape in ("constant", "nodata", "insufficient"):
+        return "ignore", "无变化/无数据，不纳入分析", "medium"
+
+    # 8) 兜底：连续变化的量默认按质量管控看，但置信度低，交给 Phase2
+    return "quality", "波动的连续量（待确认）", "low"
 
 
 def _make_summary(classified):
@@ -486,6 +903,17 @@ def _make_summary(classified):
     for c in classified:
         cats[c["category"]] = cats.get(c["category"], 0) + 1
     return " · ".join(f"{k}{v}" for k, v in cats.items())
+
+
+def _make_purpose_summary(classified):
+    """按用途汇总，用中文标签 —— 这一行才是现场能直接看懂的分工视图。"""
+    counts = {}
+    for c in classified:
+        p = c.get("purpose")
+        if p:
+            counts[p] = counts.get(p, 0) + 1
+    order = list(PURPOSE_LABELS)
+    return " · ".join(f"{PURPOSE_LABELS[k]}{counts[k]}" for k in order if counts.get(k))
 
 
 # ── 筛选状态持久化 ──
@@ -585,26 +1013,75 @@ def load_screen_state(conn, device_code: str) -> Optional[Dict[str, Any]]:
 
 def discover_pulse_params(conn, device_code: str, device_name: str,
                           days: int = 7) -> Dict[str, Any]:
-    """Step ② 脉搏发现：分析所有参数的周期性，推荐最适合做cycle划分的参数。"""
+    """Step ② 脉搏发现：基于两大特征推荐最适合做 cycle 划分的参数。
+
+    特征①阶梯状：参数值长时间保持不变、偶尔跳跃式切换（离散状态码）。
+    特征②循环规律：跳转序列存在重复模式，周期时长稳定。
+
+    典型脉搏参数（如 Tec_Stage）同时满足两条；连续振荡参数仅有循环性、
+    无阶梯性，得分较低但仍可作为候选。
+    """
     from datetime import timedelta
     from psycopg2.extras import RealDictCursor
     import statistics as st
+    from .services import TimescaleDB
 
     end = datetime.now()
     start = end - timedelta(days=days)
 
+    # 参数定义 + 关联电表 + 中文名
+    display_name_map: Dict[str, str] = {}
+    meter_ids: List[str] = []
+    try:
+        _pdb = TimescaleDB()
+        _pdb.conn = conn
+        _points = _pdb.get_points(device_code)
+        display_name_map = {p["p_name"]: p.get("display_name") or p["p_name"] for p in _points}
+        meter_ids = _pdb.get_energy_device_ids(device_code)
+    except Exception as e:
+        # 拿不到点位元数据只影响显示名/能耗点位，不阻断脉搏发现，但要留痕
+        print(f"[脉搏发现] 读取点位元数据失败 device={device_code}: {e}")
+
+    _ENERGY_WHITELIST = ("ene_eptotal", "ene_imp")
+    _PER_PARAM_LIMIT = 10000
+
+    # 每参数公平采样（含时间戳，供周期分析）
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SET statement_timeout = '30s'")
-            cur.execute("""
-                SELECT a.point_id AS p_name, a.point_value::double precision AS v
+            alarm_select = """
+                SELECT a.point_id AS p_name,
+                       COALESCE(a.point_value_full, a.point_value)::double precision AS v,
+                       a.point_time
                 FROM device_alarm_info a
                 WHERE a.device_id = %s
                   AND a.point_time >= %s AND a.point_time <= %s
                   AND a.point_value IS NOT NULL
-                ORDER BY a.point_time
-                LIMIT 50000
-            """, (device_code, start, end))
+            """
+            selects = [alarm_select]
+            params: list = [device_code, start, end]
+            if meter_ids:
+                selects.append("""
+                    SELECT e.point_id AS p_name,
+                           e.point_value::double precision AS v,
+                           e.point_time
+                    FROM device_energy_info e
+                    WHERE e.device_id = ANY(%s)
+                      AND e.point_time >= %s AND e.point_time <= %s
+                      AND e.point_id = ANY(%s)
+                      AND e.point_value IS NOT NULL
+                """)
+                params.extend([meter_ids, start, end, list(_ENERGY_WHITELIST)])
+            union_sql = " UNION ALL ".join(f"({s})" for s in selects)
+            cur.execute(f"""
+                SELECT p_name, v, point_time FROM (
+                    SELECT p_name, v, point_time,
+                           ROW_NUMBER() OVER (PARTITION BY p_name ORDER BY point_time DESC) AS rn
+                    FROM ({union_sql}) combined
+                ) ranked
+                WHERE rn <= %s
+                ORDER BY p_name, point_time
+            """, params + [_PER_PARAM_LIMIT])
             rows = cur.fetchall()
     except Exception as e:
         return {"error": f"查询失败: {e}", "step": 2}
@@ -613,74 +1090,33 @@ def discover_pulse_params(conn, device_code: str, device_name: str,
         return {"error": "无数据", "step": 2}
 
     param_vals: Dict[str, List[float]] = {}
+    param_times: Dict[str, List[Any]] = {}
     for r in rows:
         param_vals.setdefault(r["p_name"], []).append(r["v"])
+        param_times.setdefault(r["p_name"], []).append(r["point_time"])
 
     candidates = []
     for p_name, vals in param_vals.items():
         if len(vals) < 50:
             continue
-        n = len(vals)
-        uniq = len(set(vals))
-        mean_val = sum(vals) / n
-        std_val = st.stdev(vals) if n >= 2 else 0
-        if std_val == 0:
-            continue
-
-        # 周期性得分：均值穿越次数+间隔一致性
-        crossings = 0
-        for i in range(1, n):
-            if (vals[i-1] < mean_val <= vals[i]) or (vals[i-1] > mean_val >= vals[i]):
-                crossings += 1
-        if crossings < 3:
-            continue
-
-        # 计算穿越间隔的变异系数（越稳定=周期性越强）
-        cross_idxs = []
-        for i in range(1, n):
-            if (vals[i-1] < mean_val <= vals[i]) or (vals[i-1] > mean_val >= vals[i]):
-                cross_idxs.append(i)
-        gaps = [cross_idxs[i+1] - cross_idxs[i] for i in range(len(cross_idxs)-1)]
-        gap_mean = sum(gaps) / len(gaps)
-        gap_std = st.stdev(gaps) if len(gaps) >= 2 else 0
-        cv = gap_std / gap_mean if gap_mean > 0 else 1.0  # 变异系数，越小越规律
-        periodicity = max(0, 1.0 - min(cv, 1.0))
-
-        # 估算周期（分钟），假设~5秒采样
-        cycle_min = round(gap_mean * 2 * 5 / 60, 1) if gap_mean > 0 else None
-
-        # 判断理由
-        reasons = []
-        if periodicity > 0.7:
-            reasons.append("周期性极强")
-        elif periodicity > 0.4:
-            reasons.append("周期性明显")
-        if uniq <= 20:
-            reasons.append(f"离散值({uniq}种)，适合标识阶段")
-        if cycle_min and cycle_min > 0:
-            reasons.append(f"估算周期≈{cycle_min}分钟")
-        if change_rate := sum(1 for i in range(1, min(n, 1000)) if vals[i] != vals[i-1]) / (min(n, 1000) - 1):
-            if change_rate < 0.05:
-                reasons.append("离散跳跃式变化，符合状态码特征")
-
-        candidates.append({
-            "p_name": p_name,
-            "periodicity": round(periodicity, 3),
-            "cycle_minutes": cycle_min,
-            "n": n, "uniq": uniq,
-            "reason": "；".join(reasons) if reasons else "有周期规律",
-            "score": round(periodicity * 100, 0),
-        })
+        feat = _analyze_pulse_features(vals, param_times[p_name])
+        if feat:
+            feat["p_name"] = p_name
+            feat["display_name"] = display_name_map.get(p_name, p_name)
+            candidates.append(feat)
 
     candidates.sort(key=lambda x: -x["score"])
 
-    # KB增强：先查知识库，再让知识库实际参与候选排序/确认，而不只是事后加一句提示文本
+    # KB 增强
     kb_text = None
     try:
-        summary = ", ".join(f"{c['p_name']}({c['score']:.0f})" for c in candidates[:8])
-        kb_text = _query_knowledge_base_sync(device_name, f"该设备的生产节拍/阶段参数是什么？{summary}")
-    except Exception:
-        pass
+        summary = ", ".join(
+            f"{display_name_map.get(c['p_name'], c['p_name'])}({c['score']:.0f}分,周期{c.get('cycle_minutes')}min)"
+            for c in candidates[:8]
+        )
+        kb_text = query_knowledge_base(device_name, f"该设备的生产节拍/阶段参数是什么？{summary}")
+    except Exception as e:
+        print(f"[脉搏发现] 知识库检索失败（改用纯统计排序） device={device_code}: {e}")
 
     kb_ranked = _kb_rerank_pulse_candidates(device_name, candidates[:10], kb_text) if kb_text else None
     if kb_ranked:
@@ -695,18 +1131,174 @@ def discover_pulse_params(conn, device_code: str, device_name: str,
         "candidates": candidates[:20],
         "kb_hint": kb_text[:500] if kb_text else None,
         "kb_driven": bool(kb_ranked),
+        "sample_info": f"每参数≤{_PER_PARAM_LIMIT}点 · 最近{days}天",
+    }
+
+
+def _analyze_pulse_features(vals: List[float], times: List[Any]) -> Optional[Dict[str, Any]]:
+    """分析参数的两大脉搏特征：阶梯状(step) + 循环规律(cyclic)，返回特征指标和综合得分。"""
+    import statistics as st
+    n = len(vals)
+    uniq = len(set(round(v, 2) for v in vals))
+    if uniq <= 1:
+        return None  # 恒定值，不可能是脉搏
+
+    changes = sum(1 for i in range(1, n) if vals[i] != vals[i - 1])
+    flat_ratio = 1 - changes / (n - 1) if n > 1 else 0  # 越高=越阶梯(平坦段占比)
+
+    # === 特征①：阶梯状 ===
+    # 提取去重连续序列（如 12,12,13,13,14,14,1,1 → 12,13,14,1）
+    dedup = [vals[0]]
+    for v in vals[1:]:
+        if v != dedup[-1]:
+            dedup.append(v)
+
+    # 离散值因子：2~50 种离散值得分最高；>50 逐步衰减（连续参数）
+    uniq_factor = 1.0 if uniq <= 50 else max(0.2, 1 - (uniq - 50) / 200)
+    step_score = flat_ratio * uniq_factor
+
+    # === 特征②：循环规律 ===
+    # 在去重序列里找最短重复模式
+    seq = dedup
+    seq_len = len(seq)
+    pattern = None
+    pattern_rate = 0.0
+    if seq_len >= 10:
+        for plen in range(3, min(50, seq_len // 3) + 1):
+            pat = seq[:plen]
+            total = matches = 0
+            for i in range(0, seq_len - plen + 1, plen):
+                total += 1
+                if seq[i:i + plen] == pat:
+                    matches += 1
+            if total > 0:
+                rate = matches / total
+                if rate > pattern_rate:
+                    pattern_rate = rate
+                    pattern = pat
+        if pattern_rate < 0.5:
+            pattern_rate = 0.0
+            pattern = None
+
+    # 时间周期分析（用真实时间戳，不假设采样间隔）
+    cycle_min = None
+    cycle_cv = 1.0
+    cycle_count = 0
+
+    def _time_cycle(boundary_val):
+        """以"回到 boundary_val"为周期边界，返回 (durations_min, filtered) """
+        starts = [times[0]]
+        for i in range(1, n):
+            if vals[i] == boundary_val and vals[i - 1] != boundary_val:
+                starts.append(times[i])
+        durs = []
+        for i in range(1, len(starts)):
+            d = (starts[i] - starts[i - 1]).total_seconds() / 60
+            if d > 0:
+                durs.append(d)
+        if len(durs) >= 4:
+            sd = sorted(durs)
+            q1, q3 = sd[len(sd) // 4], sd[3 * len(sd) // 4]
+            iqr = q3 - q1
+            lo, hi = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+            durs = [d for d in durs if lo <= d <= hi]
+        return durs
+
+    if pattern and pattern_rate >= 0.5:
+        durs = _time_cycle(pattern[0])
+        if len(durs) >= 2:
+            dm = st.mean(durs)
+            cycle_cv = st.stdev(durs) / dm if dm > 0 else 1.0
+            cycle_min = round(dm, 1)
+            cycle_count = len(durs)
+
+    cycle_regularity = max(0, 1 - min(cycle_cv, 1.0))
+    # 阶梯参数：模式匹配率 × 周期稳定性；需至少2个完整周期
+    cycle_score = pattern_rate * cycle_regularity if cycle_count >= 2 else pattern_rate * 0.3
+
+    # 连续参数兜底：若阶梯检测弱但参数有波动，用均值穿越法补一轮
+    if cycle_score < 0.15 and n > 100:
+        mean_val = sum(vals) / n
+        std_val = st.stdev(vals) if n >= 2 else 0
+        if std_val > 0:
+            cross_t = [times[i] for i in range(1, n)
+                       if (vals[i - 1] < mean_val <= vals[i]) or (vals[i - 1] > mean_val >= vals[i])]
+            if len(cross_t) >= 6:
+                cdurs = [(cross_t[i + 1] - cross_t[i]).total_seconds() / 60
+                         for i in range(len(cross_t) - 1)]
+                if len(cdurs) >= 4:
+                    sd = sorted(cdurs)
+                    q1, q3 = sd[len(sd) // 4], sd[3 * len(sd) // 4]
+                    iqr = q3 - q1
+                    lo, hi = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+                    cdurs = [d for d in cdurs if lo <= d <= hi]
+                if len(cdurs) >= 3:
+                    cdm = st.mean(cdurs)
+                    ccv = st.stdev(cdurs) / cdm if cdm > 0 else 1
+                    cont = max(0, 1 - min(ccv, 1)) * 0.4  # 连续参数权重低
+                    if cont > cycle_score:
+                        cycle_score = cont
+                        cycle_min = round(cdm * 2, 1)
+                        cycle_count = len(cdurs)
+                        cycle_cv = ccv
+
+    # 综合得分：阶梯性(35%) + 循环性(65%)
+    score = round((0.35 * step_score + 0.65 * cycle_score) * 100)
+
+    if score < 5:
+        return None
+
+    # 生成中文说明
+    reasons = []
+    if step_score > 0.85:
+        reasons.append(f"阶梯状明显(平坦{flat_ratio:.0%},{uniq}种离散值)")
+    elif step_score > 0.5:
+        reasons.append(f"呈阶梯状({uniq}种离散值)")
+    if pattern_rate >= 0.8:
+        reasons.append(f"循环规律极强(匹配{pattern_rate:.0%})")
+    elif pattern_rate >= 0.5:
+        reasons.append(f"有循环规律(匹配{pattern_rate:.0%})")
+    if cycle_min and cycle_count >= 2:
+        reasons.append(f"周期≈{cycle_min}分钟({cycle_count}轮)")
+    if cycle_cv < 0.3:
+        reasons.append("周期极稳定")
+    elif cycle_cv < 0.6:
+        reasons.append("周期较稳定")
+
+    if not reasons:
+        return None
+
+    return {
+        "score": score,
+        "step_score": round(step_score, 3),
+        "cycle_score": round(cycle_score, 3),
+        "pattern_match_rate": round(pattern_rate, 3),
+        "cycle_minutes": cycle_min,
+        "cycle_count": cycle_count,
+        "cycle_cv": round(cycle_cv, 3),
+        "flat_ratio": round(flat_ratio, 3),
+        "n": n,
+        "uniq": uniq,
+        "pattern": [int(x) if x == int(x) else round(x, 2) for x in pattern] if pattern else None,
+        "reason": "；".join(reasons),
     }
 
 
 def _kb_rerank_pulse_candidates(device_name: str, candidates: List[Dict[str, Any]],
                                 kb_text: str) -> Optional[List[str]]:
-    """把统计打分的候选交给LLM+知识库，判断哪些更符合"生产节拍/阶段状态"参数的工艺特征，
-    返回按知识库判断的优先级排序的 p_name 列表；知识库没有相关信息时返回 None（不瞎猜、不重排）。
+    """把两大特征(阶梯状+循环规律)打分的候选交给 LLM+知识库做最终判断。
+
+    LLM 收到的不是裸分数，而是具体的特征描述（阶梯平坦率、模式匹配率、
+    周期分钟数），让它结合工艺知识判断哪个最像"生产节拍/阶段状态"参数。
     """
     import re
     import asyncio
     summary = "\n".join(
-        f"{c['p_name']}: 周期性得分{c['score']:.0f}, 估算周期{c.get('cycle_minutes')}分钟, 理由:{c['reason']}"
+        f"{c.get('display_name', c['p_name'])}({c['p_name']}): "
+        f"综合{c['score']:.0f}分, 阶梯{c.get('step_score', 0):.2f}, "
+        f"循环匹配{c.get('pattern_match_rate', 0):.0%}, "
+        f"周期{c.get('cycle_minutes')}min×{c.get('cycle_count', 0)}轮, "
+        f"{c['reason']}"
         for c in candidates
     )
     try:
@@ -714,12 +1306,13 @@ def _kb_rerank_pulse_candidates(device_name: str, candidates: List[Dict[str, Any
             llm = get_llm()
             prompt = f"""设备{device_name}。知识库参考：{kb_text[:500]}
 
-候选参数（按统计周期性打分，仅供参考，不代表工艺上的真实含义）：
+以下是按"阶梯状变化+循环规律"两大特征打分的脉搏候选参数：
 {summary}
 
-请结合知识库描述的工艺，判断这些候选里最符合"生产节拍/阶段状态"参数特征的，按可能性从高到低排序。
-只返回JSON：{{"ranked": ["p_name1","p_name2",...]}}。如果知识库没有提供足够信息判断，
-返回{{"ranked": []}}，不要凭空猜测。"""
+脉搏参数的核心特征：①值呈阶梯状跳变(离散状态码)，②跳转序列有重复模式且周期稳定。
+请结合知识库描述的工艺，判断哪个最符合"生产节拍/阶段状态"参数。
+只返回JSON：{{"ranked": ["p_name1","p_name2",...]}}（用 p_name 代码）。
+知识库信息不足时返回{{"ranked": []}}，不要猜测。"""
             resp = await llm.chat.completions.create(
                 model=CONFIG["model"], messages=[{"role": "user", "content": prompt}],
                 temperature=0.1, max_tokens=300,
@@ -737,29 +1330,67 @@ def _kb_rerank_pulse_candidates(device_name: str, candidates: List[Dict[str, Any
         return None
 
 
+_PULSE_CHUNK_LIMIT = 50000
+
+
+def _fetch_pulse_chunked(conn, device_code: str, pulse_param: str,
+                         start: datetime, end: datetime):
+    """按班次分块拉脉搏数据，返回 (rows, truncated_chunks)。
+
+    为什么要分块：原来是单次 `ORDER BY point_time LIMIT 50000`（升序），窗口内
+    点数超限时**尾部整段被丢弃**，而利用率的分母仍按完整窗口算 —— 丢掉的时间
+    被 _build_state_timeline 判成 offline，利用率被系统性低估，且 window_truncated
+    只检测前段缺失，完全不会提示。UI 允许 30 天窗口，单参数平均快于 52 秒/点就会触发。
+
+    分块后每块只覆盖一个班次（12 小时），5 万点相当于 0.86 秒/点的采样率，
+    实际不可能触发；万一触发也只影响那一块，并通过 truncated_chunks 报出来。
+    """
+    from psycopg2.extras import RealDictCursor
+    from .shift import shifts_in_range
+
+    chunks = [(w.start, w.end, w.label) for w in shifts_in_range(start, end)]
+    if not chunks:                       # 极短窗口落不到任何班次时退回整段
+        chunks = [(start, end, "全窗口")]
+
+    rows: List[Dict[str, Any]] = []
+    truncated: List[str] = []
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("SET statement_timeout = '60s'")
+        for c_start, c_end, label in chunks:
+            cur.execute("""
+                SELECT a.point_value::double precision AS v, a.point_time
+                FROM device_alarm_info a
+                WHERE a.device_id = %s AND a.point_id = %s
+                  AND a.point_time >= %s AND a.point_time < %s
+                  AND a.point_value IS NOT NULL
+                ORDER BY a.point_time LIMIT %s
+            """, (device_code, pulse_param, c_start, c_end, _PULSE_CHUNK_LIMIT))
+            chunk_rows = cur.fetchall()
+            if len(chunk_rows) >= _PULSE_CHUNK_LIMIT:
+                truncated.append(label)
+            rows.extend(chunk_rows)
+    return rows, truncated
+
+
 def analyze_state_from_pulse(conn, device_code: str, device_name: str,
-                              pulse_param: str, days: int = 7) -> Dict[str, Any]:
+                              pulse_param: str, days: int = 7,
+                              start_time: Optional[datetime] = None,
+                              end_time: Optional[datetime] = None) -> Dict[str, Any]:
     """Step ③ 状态划分：基于脉搏参数+MySQL运行时段，分三类计算利用率。"""
     from datetime import timedelta
     from psycopg2.extras import RealDictCursor
     import statistics as st
 
-    end = datetime.now()
-    start = end - timedelta(days=days)
+    if start_time and end_time:
+        end = end_time
+        start = start_time
+    else:
+        end = datetime.now()
+        start = end - timedelta(days=days)
 
-    # 1. 拉脉搏参数原始数据
+    # 1. 拉脉搏参数原始数据（按班次分块，避免单次 LIMIT 丢掉窗口尾部）
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SET statement_timeout = '30s'")
-            cur.execute("""
-                SELECT a.point_value::double precision AS v, a.point_time
-                FROM device_alarm_info a
-                WHERE a.device_id = %s AND a.point_id = %s
-                  AND a.point_time >= %s AND a.point_time <= %s
-                  AND a.point_value IS NOT NULL
-                ORDER BY a.point_time LIMIT 50000
-            """, (device_code, pulse_param, start, end))
-            rows = cur.fetchall()
+        rows, truncated_chunks = _fetch_pulse_chunked(conn, device_code, pulse_param, start, end)
     except Exception as e:
         return {"error": f"查询失败: {e}", "step": 3}
 
@@ -780,49 +1411,26 @@ def analyze_state_from_pulse(conn, device_code: str, device_name: str,
         window_truncated = True
     total_h = round((end - effective_start).total_seconds() / 3600, 1)
 
-    # 2. 分类：值变化 = 运行中，值不变 = 非运行(空闲/离线)
-    running_sec = 0.0
-    idle_sec = 0.0
-    offline_sec = 0.0
-    running_segs = []
-    seg_start = times[0]
-    seg_val = vals[0]
+    # 2. 分类：与状态切片图同一口径——断档>N分钟判离线，其余按脉搏值>0=运行/值=0=非运行。
+    #    以前卡片用「总时长−运行−非运行」残差反推离线，但值不变的长断档会被算进非运行，
+    #    导致卡片离线≈0、时间轴离线却很大的矛盾（断档归了谁说不清）。
+    #    统一从时间轴段累加，两处数值必然一致。
+    timeline, timeline_totals = _build_state_timeline(times, vals, effective_start, end)
 
-    for i in range(1, len(vals)):
-        if vals[i] != seg_val:
-            # 值变了 → 上一段结束
-            dur = (times[i] - seg_start).total_seconds()
-            if dur > 0:
-                if seg_val > 0 or (i > 0 and vals[i-1] != 0):
-                    running_sec += dur
-                    if dur > 60:  # 只记录>1分钟的段
-                        running_segs.append({
-                            "start": str(seg_start)[:19],
-                            "end": str(times[i])[:19],
-                            "hours": round(dur / 3600, 2),
-                            "stage": round(float(seg_val), 1),
-                        })
-                else:
-                    idle_sec += dur
-            seg_start = times[i]
-            seg_val = vals[i]
-
-    # 最后一段
-    dur = (times[-1] - seg_start).total_seconds()
-    if dur > 0:
-        if seg_val > 0:
-            running_sec += dur
-        else:
-            idle_sec += dur
-
-    running_h = round(running_sec / 3600, 2)
-    idle_h = round(idle_sec / 3600, 2)
-    offline_h = round(max(0, total_h - running_h - idle_h), 2)
+    running_h = timeline_totals["running_h"]
+    idle_h = timeline_totals["idle_h"]
+    offline_h = timeline_totals["offline_h"]
+    running_segs = [
+        {"start": sg["start"], "end": sg["end"], "hours": sg["hours"],
+         "stage": round(float(vals[0]), 1)}
+        for sg in timeline if sg["state"] == "running"
+    ][:30]
 
     utilization = round(running_h / total_h * 100, 1) if total_h > 0 else 0
-    availability = round((running_h + idle_h) / total_h * 100, 1) if total_h > 0 else 0
-
-    timeline, timeline_totals = _build_state_timeline(times, vals, effective_start, end)
+    # 设备运转率 = 运行 ÷ (总时长 - 离线时间)，即运行占"在线时长"的比例。
+    # 离线(offline_h)是断档/关机时间，分母排除它才能体现设备真正上线时的运转水平。
+    online_h = max(0.0, total_h - offline_h)
+    operation_rate = round(running_h / online_h * 100, 1) if online_h > 0 else 0
 
     return {
         "step": 3, "days": days, "pulse_param": pulse_param,
@@ -830,23 +1438,32 @@ def analyze_state_from_pulse(conn, device_code: str, device_name: str,
         "requested_days": days,
         "window_truncated": window_truncated,
         "data_from": str(effective_start)[:19],
+        "data_to": str(times[-1])[:19],
+        # 哪些班次块的数据量撞到了取数上限（撞到才可能丢数据，正常情况为空）
+        "chunk_truncated": truncated_chunks,
         "truncate_note": (
             f"原始数据仅保留到 {str(effective_start)[:16]}，请求的 {days} 天窗口只有"
             f" {round(total_h / 24, 1)} 天有数据；下列指标均按实际覆盖范围计算。"
             if window_truncated else None
         ),
+        "chunk_truncate_note": (
+            f"以下班次的采样点数达到取数上限（{_PULSE_CHUNK_LIMIT}），"
+            f"这些班次的数据可能不完整：{'、'.join(truncated_chunks)}"
+            if truncated_chunks else None
+        ),
         "running_hours": running_h,
         "idle_hours": idle_h,
         "offline_hours": offline_h,
         "utilization": utilization,
-        "availability": availability,
+        "operation_rate": operation_rate,
+        "availability": operation_rate,
         "running_segments": running_segs[:30],
         "timeline": timeline,
         "timeline_totals": timeline_totals,
         "timeline_gap_minutes": _OFFLINE_GAP_MIN,
-        "daily_breakdown": _daily_breakdown(times, vals, start, end, pulse_param),
-        "ai_insight": _state_ai_insight(device_name, pulse_param, total_h, running_h, idle_h, utilization, availability, days),
-        "summary": f"🏢资产利用率{utilization}% · 🔧设备可用率{availability}%",
+        "daily_breakdown": _daily_breakdown(times, vals, effective_start, end, pulse_param),
+        "ai_insight": _state_ai_insight(device_name, pulse_param, total_h, running_h, idle_h, utilization, operation_rate, days),
+        "summary": f"🏢资产利用率{utilization}% · 🔧设备运转率{operation_rate}%",
     }
 
 
@@ -1159,8 +1776,8 @@ def _analyze_house_quality(conn, device_code: str, houses: list, start, end) -> 
                 LIMIT 5
             """, (device_code,))
             quality_params = cur.fetchall()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[房子质量] 质量参数查询失败 device={device_code}: {e}")
 
     details = []
     for h in houses:
@@ -1184,8 +1801,8 @@ def _analyze_house_quality(conn, device_code: str, houses: list, start, end) -> 
                             "std": round(float(row["std_val"] or 0), 1),
                             "unit": p["p_unit"] or "",
                         }
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[房子质量] 参数 {p.get('p_name')} 统计失败: {e}")
         details.append(house_result)
 
     passed = sum(1 for d in details if d["passed"])
@@ -1233,48 +1850,46 @@ def _efficiency_ai_insight(data: dict) -> str:
 
 
 def _daily_breakdown(times, vals, start, end, pulse_param):
-    """按天切分统计数据。"""
+    """按天切分统计数据（与状态切片图同一口径：断档>N分钟判离线）。"""
     from collections import defaultdict
+    from datetime import datetime, timedelta
+
+    timeline, _ = _build_state_timeline(times, vals, start, end)
     days = defaultdict(lambda: {"running": 0.0, "idle": 0.0, "offline": 0.0, "segments": 0})
-    day_start = None
-    current_day = None
-    running = False
 
-    for i, t in enumerate(times):
-        day = t.strftime("%Y-%m-%d")
-        if day != current_day:
-            current_day = day
-            day_start = t
-            running = vals[i] > 0 if i < len(vals) else False
-
-        if i > 0 and vals[i] != vals[i-1]:
-            dur = (times[i] - (day_start or times[i-1])).total_seconds() / 3600
-            if dur > 0:
-                if running:
-                    days[current_day]["running"] += dur
-                else:
-                    days[current_day]["idle"] += dur
-                days[current_day]["segments"] += 1
-            day_start = times[i]
-            running = vals[i] > 0
+    for sg in timeline:
+        seg_start = datetime.strptime(sg["start"], "%Y-%m-%d %H:%M:%S")
+        seg_end = datetime.strptime(sg["end"], "%Y-%m-%d %H:%M:%S")
+        day = seg_start.date()
+        day_end = datetime(day.year, day.month, day.day) + timedelta(days=1)
+        # 跨天段：按落在各天的时长拆分，避免整段记到开始那天
+        while seg_start < seg_end:
+            boundary = min(seg_end, day_end)
+            dur_h = (boundary - seg_start).total_seconds() / 3600
+            key = seg_start.strftime("%Y-%m-%d")
+            days[key][sg["state"]] += round(dur_h, 6)
+            days[key]["segments"] += 1
+            seg_start = boundary
+            day_end = boundary.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
     result = []
     for day in sorted(days.keys()):
         d = days[day]
-        total = d["running"] + d["idle"]
-        offline = max(0, 24 - total)
+        total = d["running"] + d["idle"] + d["offline"]
+        online = max(0.0, total - d["offline"])
         result.append({
             "date": day,
             "running_h": round(d["running"], 1),
             "idle_h": round(d["idle"], 1),
-            "offline_h": round(offline, 1),
-            "utilization": round(d["running"] / 24 * 100, 1) if total > 0 else 0,
+            "offline_h": round(d["offline"], 1),
+            "utilization": round(d["running"] / total * 100, 1) if total > 0 else 0,
+            "operation_rate": round(d["running"] / online * 100, 1) if online > 0 else 0,
             "segments": d["segments"],
         })
     return result
 
 
-def _state_ai_insight(device_name, pulse_param, total_h, running_h, idle_h, utilization, availability, days):
+def _state_ai_insight(device_name, pulse_param, total_h, running_h, idle_h, utilization, operation_rate, days):
     """用LLM生成状态分析洞察（同步调用）。"""
     try:
         import asyncio
@@ -1294,11 +1909,12 @@ def _state_ai_insight(device_name, pulse_param, total_h, running_h, idle_h, util
 - 运行时长：{running_h} 小时（资产利用率 {utilization}%）
 - 空闲时长：{idle_h} 小时
 - 离线时长：{round(total_h - running_h - idle_h, 2)} 小时
-- 设备可用率：{availability}%（运行+空闲 / 总时长，即在线的比例）
+- 设备运转率：{operation_rate}%（运行 / 在线时长，在线时长=总时长-离线）
+- 离线时长：{round(total_h - running_h - idle_h, 2)} 小时
 
 === 计算公式 ===
 资产利用率 = 运行时长 ÷ 总时长 × 100% = {running_h} ÷ {total_h} × 100% = {utilization}%
-设备可用率 = (运行时长 + 空闲时长) ÷ 总时长 × 100% = ({running_h} + {idle_h}) ÷ {total_h} × 100% = {availability}%
+设备运转率 = 运行时长 ÷ (总时长 - 离线时长) × 100% = {running_h} ÷ {round(total_h - round(total_h - running_h - idle_h, 2), 2)} × 100% = {operation_rate}%
 
 请从以下角度给出详细诊断（150-300字）：
 1. 当前设备运行效率评价（高/中/低，为什么）

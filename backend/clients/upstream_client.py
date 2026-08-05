@@ -28,7 +28,7 @@ class UpstreamClient:
         初始化上游客户端
 
         Args:
-            base_url: 上游系统基础地址（如 http://10.1.2.100:8080）
+            base_url: 上游系统基础地址（如 http://CHANGE_ME:8080）
             secret: 内部服务鉴权密钥（X-Internal-Service-Secret 请求头）
             timeout: 单次请求超时秒数
             max_retries: 5xx/网络错误最大重试次数
@@ -225,9 +225,7 @@ class UpstreamClient:
 
         path = "/report/ai-agent/lean-morning-daily/param"
         full_url = f"{self.base_url}{path}"
-        print(f"[上游拉参] 请求地址: {full_url}")
-        print(f"[上游拉参] 请求参数: {params}")
-        print(f"[上游拉参] 请求头: X-Internal-Service-Secret={self.secret[:5]}...")
+        logger.info("[UpstreamClient] 拉参请求: %s params=%s", full_url, params)
 
         resp = self._request_with_retry(
             "GET",
@@ -237,18 +235,8 @@ class UpstreamClient:
         resp.raise_for_status()
 
         result = resp.json()
-
-        # 完整输出原始响应
-        print(f"\n{'='*70}")
-        print(f"[上游拉参] 原始响应完整内容")
-        print(f"{'='*70}")
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        print(f"{'='*70}\n")
-
-        logger.info(
-            "[UpstreamClient] 拉参原始响应（前1000字符）: %s",
-            json.dumps(result, ensure_ascii=False)[:1000]
-        )
+        logger.debug("[UpstreamClient] 拉参响应（前1000字符）: %s",
+                     json.dumps(result, ensure_ascii=False)[:1000])
 
         # 先检查业务状态码（必须在解析数据前）
         resp_code = result.get("code")
@@ -301,6 +289,7 @@ class UpstreamClient:
         knowledge_base_payload: str = "",
         agent_response_raw: str = "",
         error_message: str = "",
+        team_compare_markdown: str = "",
     ) -> dict:
         """
         回写报告生成结果
@@ -318,6 +307,7 @@ class UpstreamClient:
             knowledge_base_payload: 趋势分析的引用信息 JSON（第2份报告 citations → knowledgeBasePayload）
             agent_response_raw: 全部原始报告 JSON（→ agentResponseRaw）
             error_message: 失败原因
+            team_compare_markdown: 班次/班组绩效对比内容（第4份报告 → teamCompareMarkdown）
 
         Returns:
             回调响应体（Mock 模式下返回模拟成功响应）
@@ -336,6 +326,9 @@ class UpstreamClient:
             body["kbReportMarkdown"] = kb_report_markdown
             body["knowledgeBasePayload"] = knowledge_base_payload
             body["summaryMarkdown"] = summary_markdown
+            # 该回调客户端被多类报告共用，只有日报传入第四份报告时才扩展请求体。
+            if team_compare_markdown:
+                body["teamCompareMarkdown"] = team_compare_markdown
             body["agentResponseRaw"] = agent_response_raw
 
         if error_message:

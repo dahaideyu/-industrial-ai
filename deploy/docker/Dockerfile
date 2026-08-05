@@ -123,6 +123,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # GitHub Actions 的构建跑在境外 runner 上，走国内源反而更慢，workflow 里传
 # APT_MIRROR= （空值）关掉即可，此时用官方 deb.debian.org。
 ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
+ARG KEEP_PLAINTEXT_PROMPTS=false
 RUN if [ -n "$APT_MIRROR" ]; then \
         sed -i "s|http://deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources && \
         echo "=== apt 源已切换到 $APT_MIRROR ==="; \
@@ -140,12 +141,13 @@ COPY --from=code-protect /build/backend/ ./backend/
 # 复制 MQTT ETL 服务代码
 COPY mqtt_etl/ ./mqtt_etl/
 
-# 删除明文提示词文件（前提是已运行 encrypt_prompts.py 生成加密文件）
-RUN if [ -f backend/prompts_encrypted.json ]; then \
+# 生产包默认优先使用加密提示词；测试日报时可传 KEEP_PLAINTEXT_PROMPTS=true，
+# 即使工作区残留 prompts_encrypted.json 也保留明文，配合 PROMPT_SOURCE=file 使用。
+RUN if [ "$KEEP_PLAINTEXT_PROMPTS" != "true" ] && [ -f backend/prompts_encrypted.json ]; then \
         find backend -name "*.txt" -path "*/prompts/*" -delete && \
         echo "已删除明文提示词文件（使用加密版本）"; \
     else \
-        echo "警告: prompts_encrypted.json 不存在，保留明文提示词"; \
+        echo "保留明文提示词（测试模式或加密文件不存在）"; \
     fi && \
     # 打印后端文件信息，方便确认是编译版本还是源码版本
     echo "=== 后端文件检查 ===" && \
@@ -165,11 +167,16 @@ ENV PATH="/app/.venv/bin:$PATH"
 # 层缓存。镜像分发时（docker pull）也只需传输一次，跨境拉取尤其明显。
 # 不并入 final-base，是为了保持 repair-suggestion/mqtt-etl 的轻量（见文件头注释）。
 FROM final-base AS final-office
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libreoffice-common libreoffice-writer libreoffice-calc libreoffice-impress \
-    fontconfig fonts-noto-cjk fonts-liberation \
-    && fc-cache -f \
-    && rm -rf /var/lib/apt/lists/*
+ARG INSTALL_LIBREOFFICE=true
+RUN if [ "${INSTALL_LIBREOFFICE}" = "true" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+        libreoffice-common libreoffice-writer libreoffice-calc libreoffice-impress \
+        fontconfig fonts-noto-cjk fonts-liberation \
+        && fc-cache -f \
+        && rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "Skipping LibreOffice for report-only test image"; \
+    fi
 
 # ---- Stage 4: 文档处理 worker ----
 # 供 knb-celery-worker 使用：final-office（LibreOffice，Office→PDF，见 convert_tasks.py）

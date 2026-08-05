@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS ai_analysis_report (
     markdown_content        TEXT,
     summary_markdown        TEXT,
     kb_report_markdown      TEXT,
+    team_compare_markdown   TEXT,
     knowledge_base_payload  TEXT,
     status                  INTEGER     NOT NULL DEFAULT 0,
     error_message           TEXT,

@@ -1,8 +1,10 @@
 # cython: annotation_typing=False, infer_types=False, language_level=3
 """设备参数 API 路由"""
 import os
+import asyncio
+import logging
 from datetime import datetime, date, timedelta
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 from collections import defaultdict
 
 import numpy as np
@@ -14,7 +16,14 @@ from pydantic import BaseModel
 from core.response import success_response, error_response
 from .services import TimescaleDB
 from .analysis_service import analyze_device_params, screen_params, save_screen_state, load_screen_state, discover_pulse_params, analyze_state_from_pulse
-from .kpi_analysis import compute_kpi_summary, compute_stage_cpk
+from .kpi_analysis import (compute_kpi_summary, compute_stage_cpk, compute_energy_breakdown,
+                           load_kpi_config, save_kpi_config)
+from . import tuning
+from .shift import shifts_in_range, parse_shift_key, full_days_in_range
+from .shift_analysis import analyze_one_shift, analyze_range, analyze_full_days_range
+from . import shift_store
+from .shift_store import ALL_TYPES
+from .stage_analysis import db_device_name
 from .anomaly_detector import AnomalyDetector, get_detector
 from .stage_analysis import analyze_stages, save_state_groups, detect_stage_param
 from . import stats_store
@@ -25,6 +34,7 @@ from . import analysis_log
 from .rollup_worker import run_rollup_job
 
 router = APIRouter(prefix="/api/device-params", tags=["device-params"])
+logger = logging.getLogger(__name__)
 
 
 class ParamDataRequest(BaseModel):
@@ -495,7 +505,16 @@ def save_stage_state_config(req: StageStateConfigRequest):
         return error_response(msg="TimescaleDB 数据库连接失败", code=500)
     try:
         cfg = save_state_groups(db.conn, req.device_code, req.config, user=req.updated_by)
-        return success_response(data={"device_code": req.device_code, "config": cfg})
+        # 状态分组变了，已缓存的④阶段配方结果(state/states 字段)是按旧分组算的，必须
+        # 整体失效，否则用户改完分组还看到旧的状态归并结果，以为没保存成功。
+        invalidated = 0
+        try:
+            invalidated = shift_store.invalidate(db.conn, req.device_code,
+                                                 analysis_type=shift_store.TYPE_STAGE_RECIPE)
+        except Exception as e:
+            print(f"[状态分组] 缓存失效失败（配置已保存）: {e}")
+        return success_response(data={"device_code": req.device_code, "config": cfg,
+                                      "invalidated_cache": invalidated})
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -751,12 +770,11 @@ async def suggest_param_profile(
     try:
         profiles = await param_profile.build_profiles(
             db, device_code, sample_days=sample_days, use_llm=use_llm)
-        n = param_profile.save_suggestions(db.conn, device_code, profiles)
+        n = await asyncio.to_thread(param_profile.save_suggestions, db.conn, device_code, profiles)
         return success_response(data={"device_code": device_code, "count": n,
                                       "profiles": profiles})
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.error("参数画像识别失败", exc_info=True)
         return error_response(msg=f"参数画像识别失败: {str(e)}", code=500)
     finally:
         db.close()
@@ -1134,8 +1152,7 @@ async def screen_device_params(req: ScreenParamsRequest):
             return error_response(msg=result["error"], code=400)
         return success_response(data=result)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.error("参数筛选失败", exc_info=True)
         return error_response(msg=f"参数筛选失败: {str(e)}", code=500)
     finally:
         db.close()
@@ -1217,6 +1234,8 @@ class StateAnalysisRequest(BaseModel):
     device_name: Optional[str] = None
     pulse_param: str
     days: int = 1
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
 
 
 @router.post("/state-analysis")
@@ -1226,9 +1245,21 @@ def analyze_device_state(req: StateAnalysisRequest):
     if not db.connect():
         return error_response(msg="TimescaleDB 连接失败", code=500)
     try:
+        st, et = None, None
+        if req.start_time:
+            try:
+                st = datetime.strptime(req.start_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return error_response(msg="开始时间格式错误", code=400)
+        if req.end_time:
+            try:
+                et = datetime.strptime(req.end_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return error_response(msg="结束时间格式错误", code=400)
         result = analyze_state_from_pulse(
             db.conn, req.device_code, req.device_name or req.device_code,
-            req.pulse_param, days=req.days)
+            req.pulse_param, days=req.days,
+            start_time=st, end_time=et)
         if "error" in result:
             return error_response(msg=result["error"], code=400)
         return success_response(data=result)
@@ -1251,6 +1282,8 @@ class KpiRequest(BaseModel):
     device_name: Optional[str] = None
     pulse_param: str
     days: int = 1
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
 
 
 @router.post("/kpi")
@@ -1260,7 +1293,19 @@ def compute_device_kpi(req: KpiRequest):
     if not db.connect():
         return error_response(msg="TimescaleDB 连接失败", code=500)
     try:
-        result = compute_kpi_summary(db, req.device_code, req.pulse_param, days=req.days)
+        st, et = None, None
+        if req.start_time:
+            try:
+                st = datetime.strptime(req.start_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return error_response(msg="开始时间格式错误", code=400)
+        if req.end_time:
+            try:
+                et = datetime.strptime(req.end_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return error_response(msg="结束时间格式错误", code=400)
+        result = compute_kpi_summary(db, req.device_code, req.pulse_param, days=req.days,
+                                     start_time=st, end_time=et)
         if "error" in result:
             return error_response(msg=result["msg"], code=400)
         return success_response(data=result)
@@ -1271,11 +1316,292 @@ def compute_device_kpi(req: KpiRequest):
         db.close()
 
 
+class TuningRequest(BaseModel):
+    device_code: str
+    overrides: Dict[str, Any] = {}
+    updated_by: Optional[str] = None
+
+
+@router.get("/tuning")
+def get_tuning(device_code: str = Query(..., description="设备编号")):
+    """读该设备的可调阈值（默认值 + 覆盖项）及每项的说明/取值范围。
+
+    这些阈值原来硬编码在函数里，工艺调一个值要改代码重新部署 ——
+    标准作业必须是工艺自己看得见、改得动、能追溯的。
+    """
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        return success_response(data={
+            "device_code": device_code,
+            "values": tuning.load(db.conn, device_code),
+            "defaults": tuning.DEFAULTS,
+            "schema": tuning.schema(),
+        })
+    except Exception as e:
+        return error_response(msg=f"读取调参配置失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+@router.post("/tuning")
+def update_tuning(req: TuningRequest):
+    """保存调参覆盖项。越界值自动夹到边界，未知键忽略，传 null 恢复该项默认值。
+
+    阈值变了，之前按旧阈值算出来的班次结果就不作数了，整体作废重算。
+    """
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        _, ignored = tuning.validate(req.overrides)
+        values = tuning.save(db.conn, req.device_code, req.overrides,
+                             user=req.updated_by or "ui")
+        invalidated = 0
+        try:
+            invalidated = shift_store.invalidate(db.conn, req.device_code)
+        except Exception as e:
+            print(f"[调参] 缓存失效失败（配置已保存）: {e}")
+        return success_response(data={
+            "values": values, "ignored_keys": ignored,
+            "invalidated_cache": invalidated,
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"保存调参配置失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+class ShiftAnalysisRequest(BaseModel):
+    device_code: str
+    device_name: Optional[str] = None
+    pulse_param: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    shift_key: Optional[str] = None                    # 只分析单个班次时用，如 20260803-night
+    analysis_types: Optional[List[str]] = None         # 缺省=全部4类
+    force: bool = False                                # true=忽略缓存重算（"重新分析"按钮）
+    selected_points: Optional[List[str]] = None        # 能耗点位勾选
+
+
+@router.get("/shifts")
+def list_shifts(start_time: str = Query(..., description="开始时间 YYYY-MM-DD HH:MM:SS"),
+                end_time: str = Query(..., description="结束时间 YYYY-MM-DD HH:MM:SS")):
+    """把时间范围拆成班次列表（不做分析）。前端先画出班次框架，再逐个取结果。"""
+    try:
+        st = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+        et = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return error_response(msg="时间格式错误，需 YYYY-MM-DD HH:MM:SS", code=400)
+    windows = shifts_in_range(st, et)
+    return success_response(data={"shifts": [w.to_dict() for w in windows], "count": len(windows)})
+
+
+@router.post("/shift-analysis")
+def analyze_by_shift(req: ShiftAnalysisRequest):
+    """按班次分析（推荐入口）。
+
+    - 传 shift_key：只分析该班次
+    - 传 start_time/end_time：拆成班次逐个分析，按班次返回
+    结果自动落库；已结束班次的结果永久缓存，进行中的标 partial。
+    force=true 强制重算。
+    """
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        types = req.analysis_types or list(ALL_TYPES)
+        if req.shift_key:
+            try:
+                window = parse_shift_key(req.shift_key)
+            except ValueError as e:
+                return error_response(msg=str(e), code=400)
+            data = analyze_one_shift(
+                db, req.device_code, req.device_name or db_device_name(db, req.device_code),
+                req.pulse_param, window, analysis_types=types, force=req.force,
+                selected_points=req.selected_points,
+            )
+            return success_response(data={"shifts": [data], "shift_count": 1})
+
+        if not (req.start_time and req.end_time):
+            return error_response(msg="需提供 shift_key 或 start_time+end_time", code=400)
+        try:
+            st = datetime.strptime(req.start_time, "%Y-%m-%d %H:%M:%S")
+            et = datetime.strptime(req.end_time, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return error_response(msg="时间格式错误", code=400)
+
+        data = analyze_range(db, req.device_code, req.pulse_param, st, et,
+                             analysis_types=types, force=req.force,
+                             selected_points=req.selected_points,
+                             device_name=req.device_name)
+        if "error" in data:
+            return error_response(msg=data.get("msg", "班次分析失败"), code=400)
+        return success_response(data=data)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"班次分析失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+class DayAnalysisRequest(BaseModel):
+    device_code: str
+    device_name: Optional[str] = None
+    pulse_param: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    day_key: Optional[str] = None                      # 只分析单个天窗口时用，如 20260803-full
+    analysis_types: Optional[List[str]] = None         # 缺省=仅能耗（天粒度目前只服务②能耗）
+    force: bool = False
+    selected_points: Optional[List[str]] = None        # 能耗点位勾选
+
+
+@router.get("/full-days")
+def list_full_days(start_time: str = Query(..., description="开始时间 YYYY-MM-DD HH:MM:SS"),
+                   end_time: str = Query(..., description="结束时间 YYYY-MM-DD HH:MM:SS")):
+    """把时间范围拆成"天"(06:00→次日06:00)窗口列表（不做分析）。对称于 /shifts。"""
+    try:
+        st = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+        et = datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return error_response(msg="时间格式错误，需 YYYY-MM-DD HH:MM:SS", code=400)
+    windows = full_days_in_range(st, et)
+    return success_response(data={"days": [w.to_dict() for w in windows], "count": len(windows)})
+
+
+@router.post("/day-analysis")
+def analyze_by_day(req: DayAnalysisRequest):
+    """按天(06:00→次日06:00)分析（浏览 3 天/1 个月这种较长范围时用）。对称于
+    /shift-analysis，只是以天(而不是 12 小时班次)为单位——天粒度独立掐头去尾，
+    结果按天缓存(shift_type='full')，不是把两个班次的结果简单相加。
+
+    - 传 day_key：只分析该天
+    - 传 start_time/end_time：拆成天逐个分析，按天返回
+    """
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        types = req.analysis_types or ["energy"]
+        if req.day_key:
+            try:
+                window = parse_shift_key(req.day_key)
+            except ValueError as e:
+                return error_response(msg=str(e), code=400)
+            data = analyze_one_shift(
+                db, req.device_code, req.device_name or db_device_name(db, req.device_code),
+                req.pulse_param, window, analysis_types=types, force=req.force,
+                selected_points=req.selected_points,
+            )
+            return success_response(data={"days": [data], "day_count": 1})
+
+        if not (req.start_time and req.end_time):
+            return error_response(msg="需提供 day_key 或 start_time+end_time", code=400)
+        try:
+            st = datetime.strptime(req.start_time, "%Y-%m-%d %H:%M:%S")
+            et = datetime.strptime(req.end_time, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return error_response(msg="时间格式错误", code=400)
+
+        data = analyze_full_days_range(db, req.device_code, req.pulse_param, st, et,
+                                       analysis_types=types, force=req.force,
+                                       selected_points=req.selected_points,
+                                       device_name=req.device_name)
+        if "error" in data:
+            return error_response(msg=data.get("msg", "天分析失败"), code=400)
+        return success_response(data=data)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"天分析失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+class KpiConfigRequest(BaseModel):
+    device_code: str
+    empty_run_ratio: Optional[float] = None
+    std_cycle_min: Optional[float] = None      # 标准节拍(分钟)，工艺确认后记 manual
+    updated_by: Optional[str] = None
+
+
+@router.get("/kpi-config")
+def get_kpi_config(device_code: str = Query(..., description="设备编号")):
+    """读 KPI 计算口径配置：空跑判定阈值 + 标准节拍（性能效率的固定基准）。"""
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        return success_response(data=load_kpi_config(db.conn, device_code))
+    except Exception as e:
+        return error_response(msg=f"读取 KPI 配置失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+@router.post("/kpi-config")
+def update_kpi_config(req: KpiConfigRequest):
+    """改 KPI 口径配置。只传要改的字段，未传的保持原值。
+
+    标准节拍一经工艺确认即记为 manual，此后不再被自动标定覆盖 —— 性能效率
+    要的就是一个不随数据漂移的基准，否则设备劣化会被掩盖。
+    传 std_cycle_min=0 表示清除标定，下次分析会重新自动标定。
+    """
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        if req.empty_run_ratio is not None and not (0 < req.empty_run_ratio < 1):
+            return error_response(msg="空跑阈值需在 0~1 之间", code=400)
+        if req.std_cycle_min is not None and req.std_cycle_min < 0:
+            return error_response(msg="标准节拍不能为负", code=400)
+
+        std_val, std_src = req.std_cycle_min, None
+        if std_val is not None:
+            if std_val == 0:      # 清除标定：置空后下次分析重新自动标定
+                with db.conn.cursor() as cur:
+                    cur.execute("""UPDATE device_kpi_config
+                                   SET std_cycle_min=NULL, std_cycle_source=NULL, std_cycle_at=NULL
+                                   WHERE device_code=%s""", (req.device_code,))
+                db.conn.commit()
+                std_val = None
+            else:
+                std_src = "manual"
+
+        save_kpi_config(db.conn, req.device_code,
+                        empty_run_ratio=req.empty_run_ratio,
+                        std_cycle_min=std_val, std_cycle_source=std_src,
+                        user=req.updated_by or "ui")
+
+        # 口径变了，之前缓存的 KPI 结果都是按旧基准算的，必须整体失效，
+        # 否则历史班次会一直显示用旧标准节拍算出来的 performance/OEE。
+        invalidated = 0
+        if req.std_cycle_min is not None or req.empty_run_ratio is not None:
+            try:
+                invalidated = shift_store.invalidate(db.conn, req.device_code,
+                                                     analysis_type=shift_store.TYPE_KPI)
+            except Exception as e:
+                print(f"[KPI配置] 缓存失效失败（配置已保存）: {e}")
+
+        cfg = load_kpi_config(db.conn, req.device_code)
+        cfg["invalidated_kpi_cache"] = invalidated
+        return success_response(data=cfg)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"保存 KPI 配置失败: {e}", code=500)
+    finally:
+        db.close()
+
+
 class StageCpkRequest(BaseModel):
     device_code: str
     device_name: Optional[str] = None
     pulse_param: str
     days: int = 7
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
 
 
 @router.post("/efficiency-analysis")
@@ -1307,13 +1633,68 @@ def compute_device_stage_cpk(req: StageCpkRequest):
     if not db.connect():
         return error_response(msg="TimescaleDB 连接失败", code=500)
     try:
-        result = compute_stage_cpk(db, req.device_code, req.pulse_param, days=req.days)
+        st, et = None, None
+        if req.start_time:
+            try:
+                st = datetime.strptime(req.start_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return error_response(msg="开始时间格式错误", code=400)
+        if req.end_time:
+            try:
+                et = datetime.strptime(req.end_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return error_response(msg="结束时间格式错误", code=400)
+        result = compute_stage_cpk(db, req.device_code, req.pulse_param, days=req.days,
+                                   start_time=st, end_time=et)
         if "error" in result:
             return error_response(msg=result["msg"], code=400)
         return success_response(data=result)
     except Exception as e:
         import traceback; traceback.print_exc()
         return error_response(msg=f"阶段CPK计算失败: {e}", code=500)
+    finally:
+        db.close()
+
+
+class EnergyRequest(BaseModel):
+    device_code: str
+    device_name: Optional[str] = None
+    pulse_param: str
+    days: int = 1
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    selected_points: Optional[List[str]] = None
+
+
+@router.post("/energy")
+def compute_device_energy(req: EnergyRequest):
+    """Step ⑦ 能耗：按"房子"(合膏生产周期)列出每房子能耗，并拆解房内每阶段能耗。
+    组合有功总电能(ene_eptotal)为主，正向有功电能(ene_imp)为辅。
+    selected_points=前端参数筛选勾选的能耗点位；只计算/返回被勾选的(未勾选则提示)。"""
+    db = TimescaleDB()
+    if not db.connect():
+        return error_response(msg="TimescaleDB 连接失败", code=500)
+    try:
+        st, et = None, None
+        if req.start_time:
+            try:
+                st = datetime.strptime(req.start_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return error_response(msg="开始时间格式错误", code=400)
+        if req.end_time:
+            try:
+                et = datetime.strptime(req.end_time, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return error_response(msg="结束时间格式错误", code=400)
+        result = compute_energy_breakdown(db, req.device_code, req.pulse_param, days=req.days,
+                                          start_time=st, end_time=et,
+                                          selected_points=req.selected_points)
+        if "error" in result:
+            return error_response(msg=result.get("msg", "能耗计算失败"), code=400)
+        return success_response(data=result)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return error_response(msg=f"能耗计算失败: {e}", code=500)
     finally:
         db.close()
 
@@ -1986,42 +2367,35 @@ async def analyze_params(request: ParamAnalysisRequest):
         return error_response(msg="TimescaleDB 数据库连接失败", code=500)
 
     try:
-        device_id = db.get_device_id_by_code(request.device_code)
-        if device_id is None:
+        # 同步 DB 操作放到线程池中执行，避免阻塞事件循环
+        def _fetch_param_data():
+            device_id = db.get_device_id_by_code(request.device_code)
+            if device_id is None:
+                return None
+            status_code = db.get_running_status_code()
+            running_periods = []
+            if status_code:
+                running_periods = db.get_running_periods(device_id, status_code, st, et)
+            rp = running_periods if (request.analyze_running_only and running_periods) else None
+            compressed = db.get_compressed_param_data(
+                device_code=request.device_code,
+                p_name=request.p_name,
+                start_time=st,
+                end_time=et,
+                max_hours=72,
+                max_points_per_series=288,
+                running_periods=rp,
+            )
+            return running_periods, compressed
+
+        fetched = await asyncio.to_thread(_fetch_param_data)
+        if fetched is None:
             return success_response(data={
                 "analysis": "未找到该设备的信息，无法进行分析。",
                 "running_periods": [],
                 "compressed_data": None,
             })
-
-        status_code = db.get_running_status_code()
-        running_periods = []
-        if status_code:
-            running_periods = db.get_running_periods(device_id, status_code, st, et)
-
-        # 根据参数决定是否过滤运行时段
-        if request.analyze_running_only and running_periods:
-            # 使用运行时段的数据
-            compressed = db.get_compressed_param_data(
-                device_code=request.device_code,
-                p_name=request.p_name,
-                start_time=st,
-                end_time=et,
-                max_hours=72,
-                max_points_per_series=288,
-                running_periods=running_periods,
-            )
-        else:
-            # 使用所有数据（不过滤运行时段）
-            compressed = db.get_compressed_param_data(
-                device_code=request.device_code,
-                p_name=request.p_name,
-                start_time=st,
-                end_time=et,
-                max_hours=72,
-                max_points_per_series=288,
-                running_periods=None,
-            )
+        running_periods, compressed = fetched
 
         analysis = await analyze_device_params(
             device_code=request.device_code,
@@ -2032,13 +2406,16 @@ async def analyze_params(request: ParamAnalysisRequest):
             analyze_running_only=request.analyze_running_only and bool(running_periods),
         )
 
-        try:
-            analysis_log.save(db.conn, request.device_code,
-                              request.device_name or request.device_code,
-                              st, et, bool(request.analyze_running_only), analysis)
-        except Exception as e:
-            db.conn.rollback()
-            print(f"[AI分析] 留痕写入失败(不影响本次返回): {e}")
+        def _save_log():
+            try:
+                analysis_log.save(db.conn, request.device_code,
+                                  request.device_name or request.device_code,
+                                  st, et, bool(request.analyze_running_only), analysis)
+            except Exception as e:
+                db.conn.rollback()
+                logger.warning("[AI分析] 留痕写入失败(不影响本次返回): %s", e)
+
+        await asyncio.to_thread(_save_log)
 
         return success_response(data={
             "analysis": analysis,

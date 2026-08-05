@@ -71,6 +71,34 @@ def preprocess_sources(response_list: list) -> list:
 # ============================================================
 
 
+def _infer_class_name(record: dict) -> str:
+    """根据记录班次字段或计划开始时间识别白班、夜班。
+
+    Args:
+        record: 点检任务记录。
+
+    Returns:
+        ``白班``、``夜班``或 ``未知班次``。
+    """
+    raw_class_name = str(
+        record.get("className")
+        or record.get("classType")
+        or record.get("shiftName")
+        or ""
+    )
+    if "白" in raw_class_name or "早" in raw_class_name:
+        return "白班"
+    if "夜" in raw_class_name or "晚" in raw_class_name:
+        return "夜班"
+
+    start_time = str(record.get("startTime") or record.get("execStartTime") or "")
+    match = re.search(r"\s(\d{1,2}):\d{2}", start_time)
+    if not match:
+        return "未知班次"
+    hour = int(match.group(1))
+    return "夜班" if hour >= 18 or hour < 6 else "白班"
+
+
 @register("maintainTaskPage_")
 def prep_maintain_task(data: dict) -> dict | None:
     """点检保养 → 按设备分组统计状态×执行结果，只保留统计 + 异常明细。
@@ -83,6 +111,7 @@ def prep_maintain_task(data: dict) -> dict | None:
         return None
 
     by_device: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    by_class: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     abnormal_details: list[dict] = []
     total = executed = closed = not_executed = abnormal = 0
 
@@ -92,6 +121,7 @@ def prep_maintain_task(data: dict) -> dict | None:
         # clean_raw_data 已删除空字符串字段，execResult 不存在时默认为空
         exec_result = r.get("execResult", "")
         device_name = r.get("deviceName", "")
+        class_name = _infer_class_name(r)
 
         # 构造状态标签
         if status == "已执行":
@@ -108,6 +138,13 @@ def prep_maintain_task(data: dict) -> dict | None:
             label = status
 
         by_device[device_name][label] += 1
+        by_class[class_name]["total"] += 1
+        if status == "已执行":
+            by_class[class_name]["executed"] += 1
+        elif status == "已关闭":
+            by_class[class_name]["closed"] += 1
+        elif status == "未执行":
+            by_class[class_name]["notExecuted"] += 1
 
         # 提取点检异常明细（从 children 中过滤 execResult="异常" 的项）
         children = r.get("children", [])
@@ -115,10 +152,15 @@ def prep_maintain_task(data: dict) -> dict | None:
             for c in children:
                 if c.get("execResult") == "异常":
                     abnormal += 1
+                    by_class[class_name]["abnormal"] += 1
                     abnormal_details.append({
+                        "className": class_name,
                         "deviceName": device_name,
                         "planName": r.get("planName", ""),
                         "standardName": r.get("standardName", ""),
+                        "status": status,
+                        "execTime": r.get("execTime", ""),
+                        "repairNo": r.get("repairNo", ""),
                         "itemName": c.get("name", ""),
                         "content": c.get("content", ""),
                         "actValue": c.get("actValue", ""),
@@ -142,6 +184,17 @@ def prep_maintain_task(data: dict) -> dict | None:
                 ),
             }
             for name, counts in by_device.items()
+        ],
+        "byClass": [
+            {
+                "className": class_name,
+                "total": counts["total"],
+                "executed": counts["executed"],
+                "closed": counts["closed"],
+                "notExecuted": counts["notExecuted"],
+                "abnormal": counts["abnormal"],
+            }
+            for class_name, counts in sorted(by_class.items())
         ],
         "abnormalDetails": abnormal_details,
     }

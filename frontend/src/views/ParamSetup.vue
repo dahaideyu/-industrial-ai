@@ -56,13 +56,9 @@
             <div class="flex items-center gap-3 flex-wrap">
               <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">参数筛选</span>
               <span class="text-xs text-gray-500">已选 {{ checkedParams.length }} / {{ paramRows.length }} 个参数</span>
-              <span v-if="screenSummary" class="text-xs text-gray-400">{{ screenSummary }}</span>
-              <div class="flex items-center gap-1">
-                <span class="text-xs text-gray-400">窗口</span>
-                <button v-for="d in [1, 3, 7]" :key="d" @click="screenDays = d"
-                  class="px-1.5 py-0.5 text-[11px] rounded"
-                  :class="screenDays === d ? 'bg-amber-100 text-amber-700' : 'hover:bg-gray-100 text-gray-400'">{{ d }}天</button>
-              </div>
+              <span v-if="screenSummary" class="text-xs text-gray-400" title="按波形形态统计">{{ screenSummary }}</span>
+              <span v-if="purposeSummary" class="text-xs text-indigo-500" title="按用途统计 —— 这一行对应现场分工">{{ purposeSummary }}</span>
+              <span v-if="sampleInfo" class="text-xs text-gray-300">· {{ sampleInfo }}</span>
             </div>
             <div class="flex items-center gap-2">
               <button @click="toggleAll(true)" class="px-2.5 py-1.5 text-xs rounded-lg bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100">全选</button>
@@ -95,7 +91,8 @@
                 <tr class="text-left text-xs text-gray-500 border-b border-gray-200 whitespace-nowrap">
                   <th class="py-2.5 px-4 font-semibold w-10"></th>
                   <th class="py-2.5 px-3 font-semibold">参数</th>
-                  <th class="py-2.5 px-3 font-semibold">分类</th>
+                  <th class="py-2.5 px-3 font-semibold" title="波形长什么样，自动判定，决定用什么算法">形态</th>
+                  <th class="py-2.5 px-3 font-semibold" title="这个参数拿来干什么：决定归谁管、报表归口、告警发给谁。可人工修改">用途</th>
                   <th class="py-2.5 px-3 font-semibold">说明</th>
                   <th class="py-2.5 px-3 font-semibold text-right">数据点</th>
                   <th class="py-2.5 px-3 font-semibold text-center w-16">曲线</th>
@@ -110,26 +107,48 @@
                     <div class="text-[10px] text-gray-300">{{ row.p_name }}<span v-if="row.unit"> · {{ row.unit }}</span></div>
                   </td>
                   <td class="py-2 px-3">
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap" :class="catClass(row.category)">{{ catLabel(row.category) }}</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap" :class="catClass(row.shape || row.category)">{{ catLabel(row.shape || row.category) }}</span>
                     <span v-if="row.stale" class="ml-1 px-1 py-0.5 rounded text-[10px] bg-amber-50 text-amber-500" title="最近窗口内无数据，已自动改用该参数最近一批历史数据判断">历史数据</span>
+                    <span v-if="row.co_change && row.co_change.length" class="ml-1 px-1 py-0.5 rounded text-[10px] bg-cyan-50 text-cyan-600" :title="syncTitle(row)">🔗{{ row.co_change.length }}</span>
+                  </td>
+                  <!-- 用途可直接改：规则/AI 只给建议，最终以工艺判断为准 -->
+                  <td class="py-2 px-3 whitespace-nowrap">
+                    <select v-model="row.purpose" @click.stop
+                            @change="row.purpose_confidence = 'manual'; row.purpose_reason = '人工设定'"
+                            class="px-1.5 py-0.5 rounded text-[10px] font-medium border-0 cursor-pointer"
+                            :class="purposeClass(row.purpose)" :title="purposeHint(row)">
+                      <option v-for="o in PURPOSE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+                    </select>
+                    <span v-if="row.purpose_confidence === 'manual'" class="ml-1 text-[10px] text-emerald-600" title="人工设定，重新筛选不会被覆盖">✓</span>
+                    <span v-else-if="row.purpose_confidence === 'confirmed'" class="ml-1 text-[10px] text-emerald-600" title="工艺已确认">✓</span>
+                    <span v-else-if="row.purpose_confidence === 'ai'" class="ml-1 text-[10px] text-indigo-400" :title="purposeHint(row)">AI</span>
+                    <span v-else-if="row.purpose_confidence === 'low'" class="ml-1 text-[10px] text-amber-500" :title="purposeHint(row)">?</span>
                   </td>
                   <td class="py-2 px-3 text-xs text-gray-400">{{ row.reason || '—' }}</td>
                   <td class="py-2 px-3 text-right text-xs text-gray-400 tabular-nums">{{ row.n ?? '—' }}</td>
                   <td class="py-2 px-3 text-center">
                     <button @click.stop="togglePreview(row.p_name)"
                       class="text-xs px-1.5 py-0.5 rounded hover:bg-indigo-50"
-                      :class="expandedParam === row.p_name ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'"
-                      :title="expandedParam === row.p_name ? '收起' : '查看最近有数据的一天曲线'">📈</button>
+                      :class="expandedParams.has(row.p_name) ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'"
+                      :title="expandedParams.has(row.p_name) ? '收起' : '查看最近有数据的一天曲线'">📈</button>
                   </td>
                 </tr>
-                <tr v-if="expandedParam === row.p_name">
-                  <td colspan="6" class="px-4 py-3 bg-gray-50/60">
-                    <div v-if="previewLoading === row.p_name" class="text-xs text-gray-400 py-6 text-center">⏳ 正在向前查找最近有数据的一天…</div>
-                    <div v-else-if="previewErr" class="text-xs text-rose-500 py-6 text-center">{{ previewErr }}</div>
+                <tr v-if="expandedParams.has(row.p_name)">
+                  <td colspan="7" class="px-4 py-3 bg-gray-50/60">
+                    <div v-if="previewLoading.has(row.p_name)" class="text-xs text-gray-400 py-6 text-center">⏳ 正在向前查找最近有数据的一天…</div>
+                    <div v-else-if="previewErrs[row.p_name]" class="text-xs text-rose-500 py-6 text-center">{{ previewErrs[row.p_name] }}</div>
                     <div v-else-if="!(previewSeries[row.p_name] || []).length" class="text-xs text-gray-400 py-6 text-center">最近 30 天内该参数无数据</div>
                     <div v-else>
-                      <div class="text-[11px] text-gray-400 mb-1">{{ displayNames[row.p_name] || row.p_name }} · {{ previewDateRanges[row.p_name]?.label || '最近 24 小时' }} · {{ (previewSeries[row.p_name] || []).length }} 个点</div>
-                      <div :ref="el => setPreviewEl(el)" class="w-full" style="height: 200px"></div>
+                      <div class="flex flex-wrap items-center gap-2 mb-2">
+                      <span class="text-[11px] text-gray-400 whitespace-nowrap">开始</span>
+                      <input type="datetime-local" v-model="previewStarts[row.p_name]" class="text-xs border border-gray-200 rounded px-1.5 py-1" />
+                      <span class="text-gray-300 text-xs">→</span>
+                      <span class="text-[11px] text-gray-400 whitespace-nowrap">结束</span>
+                      <input type="datetime-local" v-model="previewEnds[row.p_name]" class="text-xs border border-gray-200 rounded px-1.5 py-1" />
+                      <button @click="queryPreview(row.p_name)" class="text-xs px-2.5 py-1 rounded bg-indigo-500 text-white hover:bg-indigo-600 font-medium">查询</button>
+                      <span class="text-[11px] text-gray-400 ml-auto">{{ previewDateRanges[row.p_name]?.label || '最近 24 小时' }} · {{ (previewSeries[row.p_name] || []).length }} 个点</span>
+                    </div>
+                      <div :ref="el => setPreviewEl(el, row.p_name)" class="w-full" style="height: 220px"></div>
                     </div>
                   </td>
                 </tr>
@@ -213,18 +232,26 @@
                   <td class="py-2 px-3 text-center">
                     <button @click.stop="togglePreview(row.p_name)"
                       class="text-xs px-1.5 py-0.5 rounded hover:bg-indigo-50"
-                      :class="expandedParam === row.p_name ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'"
-                      :title="expandedParam === row.p_name ? '收起' : '查看最近有数据的一天曲线'">📈</button>
+                      :class="expandedParams.has(row.p_name) ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'"
+                      :title="expandedParams.has(row.p_name) ? '收起' : '查看最近有数据的一天曲线'">📈</button>
                   </td>
                 </tr>
-                <tr v-if="expandedParam === row.p_name">
+                <tr v-if="expandedParams.has(row.p_name)">
                   <td colspan="5" class="px-4 py-3 bg-gray-50/60">
-                    <div v-if="previewLoading === row.p_name" class="text-xs text-gray-400 py-6 text-center">⏳ 正在向前查找最近有数据的一天…</div>
-                    <div v-else-if="previewErr" class="text-xs text-rose-500 py-6 text-center">{{ previewErr }}</div>
+                    <div v-if="previewLoading.has(row.p_name)" class="text-xs text-gray-400 py-6 text-center">⏳ 正在向前查找最近有数据的一天…</div>
+                    <div v-else-if="previewErrs[row.p_name]" class="text-xs text-rose-500 py-6 text-center">{{ previewErrs[row.p_name] }}</div>
                     <div v-else-if="!(previewSeries[row.p_name] || []).length" class="text-xs text-gray-400 py-6 text-center">最近 30 天内该参数无数据</div>
                     <div v-else>
-                      <div class="text-[11px] text-gray-400 mb-1">{{ displayNames[row.p_name] || row.p_name }} · {{ previewDateRanges[row.p_name]?.label || '最近 24 小时' }} · {{ (previewSeries[row.p_name] || []).length }} 个点</div>
-                      <div :ref="el => setPreviewEl(el)" class="w-full" style="height: 200px"></div>
+                      <div class="flex flex-wrap items-center gap-2 mb-2">
+                      <span class="text-[11px] text-gray-400 whitespace-nowrap">开始</span>
+                      <input type="datetime-local" v-model="previewStarts[row.p_name]" class="text-xs border border-gray-200 rounded px-1.5 py-1" />
+                      <span class="text-gray-300 text-xs">→</span>
+                      <span class="text-[11px] text-gray-400 whitespace-nowrap">结束</span>
+                      <input type="datetime-local" v-model="previewEnds[row.p_name]" class="text-xs border border-gray-200 rounded px-1.5 py-1" />
+                      <button @click="queryPreview(row.p_name)" class="text-xs px-2.5 py-1 rounded bg-indigo-500 text-white hover:bg-indigo-600 font-medium">查询</button>
+                      <span class="text-[11px] text-gray-400 ml-auto">{{ previewDateRanges[row.p_name]?.label || '最近 24 小时' }} · {{ (previewSeries[row.p_name] || []).length }} 个点</span>
+                    </div>
+                      <div :ref="el => setPreviewEl(el, row.p_name)" class="w-full" style="height: 220px"></div>
                     </div>
                   </td>
                 </tr>
@@ -391,7 +418,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import client from '../api/client.js'
@@ -429,6 +456,8 @@ const screenSaving = ref(false)
 const screenNote = ref('')
 const screenSaveNote = ref('')
 const screenSummary = ref('')
+const purposeSummary = ref('')     // 按用途汇总（节拍/质量/产量/能耗…），对应现场分工
+const sampleInfo = ref('')
 const screenFilter = ref('')
 // 已保存设定的加载结果提示：区分"没存过"和"读取失败"，避免静默失败让人误以为数据丢了
 const stateLoadNote = ref('')
@@ -471,15 +500,52 @@ const filteredPulseRows = computed(() => {
     r.p_name.toLowerCase().includes(q) || (displayNames.value[r.p_name] || '').toLowerCase().includes(q))
 })
 
+// 形态（shape）：波形长什么样，全自动判定，决定用什么算法
 function catLabel(cat) {
-  const m = { predictive: '预测维护', quality: '质量管理', management: '经营管理', useless: '无用', nodata: '无数据' }
+  const m = { pulse: '脉冲型', increasing: '递增类', decreasing: '递减类', fluctuating: '波动类',
+              constant: '恒定类', insufficient: '数据不足', nodata: '无数据',
+              // 旧版业务分类的兼容映射（历史保存的筛选状态里可能还有这些值）
+              predictive: '波动类', quality: '波动类', management: '波动类', useless: '恒定类' }
   return m[cat] || (cat ? cat : '未筛选')
 }
 function catClass(cat) {
-  const m = { predictive: 'bg-blue-50 text-blue-600', quality: 'bg-emerald-50 text-emerald-600',
-              management: 'bg-amber-50 text-amber-600', useless: 'bg-gray-100 text-gray-400',
-              nodata: 'bg-rose-50 text-rose-400' }
+  const m = { pulse: 'bg-violet-50 text-violet-600', increasing: 'bg-emerald-50 text-emerald-600',
+              decreasing: 'bg-orange-50 text-orange-600', fluctuating: 'bg-blue-50 text-blue-600',
+              constant: 'bg-gray-100 text-gray-400',
+              insufficient: 'bg-amber-50 text-amber-600',   // 和"恒定"区分开：这是"还不知道"
+              nodata: 'bg-rose-50 text-rose-400',
+              predictive: 'bg-blue-50 text-blue-600', quality: 'bg-blue-50 text-blue-600',
+              management: 'bg-blue-50 text-blue-600', useless: 'bg-gray-100 text-gray-400' }
   return m[cat] || 'bg-gray-50 text-gray-300'
+}
+
+// 用途（purpose）：归谁管、报表归口、告警路由 —— 这一维才指向具体动作
+const PURPOSE_OPTIONS = [
+  { value: 'pace', label: '节拍基准' },
+  { value: 'quality', label: '质量管控' },
+  { value: 'output', label: '产量计量' },
+  { value: 'energy', label: '能耗计量' },
+  { value: 'recipe', label: '配方设定' },
+  { value: 'health', label: '设备健康' },
+  { value: 'ignore', label: '不纳入分析' },
+]
+function purposeLabel(p) {
+  return PURPOSE_OPTIONS.find(o => o.value === p)?.label || '未判定'
+}
+function purposeClass(p) {
+  const m = { pace: 'bg-violet-50 text-violet-700', quality: 'bg-blue-50 text-blue-700',
+              output: 'bg-emerald-50 text-emerald-700', energy: 'bg-cyan-50 text-cyan-700',
+              recipe: 'bg-amber-50 text-amber-700', health: 'bg-rose-50 text-rose-700',
+              ignore: 'bg-gray-100 text-gray-400' }
+  return m[p] || 'bg-gray-50 text-gray-300'
+}
+// 置信度决定要不要提示人来确认
+function purposeHint(row) {
+  const c = row.purpose_confidence
+  if (c === 'confirmed') return '工艺已确认'
+  if (c === 'ai') return 'AI 结合工艺知识判断，建议确认'
+  if (c === 'low') return '规则判断把握不大，建议人工确认'
+  return row.purpose_reason || ''
 }
 
 function fmtNum(v, digits = 2) {
@@ -491,6 +557,17 @@ function cpkCls(v) {
   if (v < 1) return 'text-rose-500'
   if (v < 1.33) return 'text-amber-500'
   return 'text-emerald-600'
+}
+
+function syncTitle(row) {
+  const peers = row.co_change || []
+  const scores = row.co_change_scores || {}
+  const parts = peers.map(p => {
+    const name = displayNames[p] || p
+    const s = scores[p]
+    return s != null ? `${name}(${Math.round(s * 100)}%)` : name
+  })
+  return '同步变化: ' + parts.join(', ')
 }
 
 async function loadDevices() {
@@ -539,10 +616,16 @@ function applyClassifiedToRows(classified, useSuggestedChecked) {
     const c = classMap[row.p_name]
     if (!c) continue
     row.category = c.category
+    row.shape = c.shape || c.category
+    row.purpose = c.purpose || null
+    row.purpose_reason = c.purpose_reason || ''
+    row.purpose_confidence = c.purpose_confidence || null
     row.reason = c.reason
     row.n = c.n
     row.stale = !!c.stale
     row.last_seen = c.last_seen ?? null
+    row.co_change = c.co_change || []
+    row.co_change_scores = c.co_change_scores || {}
     if (useSuggestedChecked) row.checked = !!c.checked
   }
   // classified 里可能有点位表还没同步到的参数，照样展示出来，不因为定义表滞后而漏掉
@@ -551,7 +634,11 @@ function applyClassifiedToRows(classified, useSuggestedChecked) {
     if (!known.has(c.p_name)) {
       paramRows.value.push({
         p_name: c.p_name, unit: '', checked: !!c.checked,
-        category: c.category, reason: c.reason, n: c.n, stale: !!c.stale, last_seen: c.last_seen ?? null,
+        category: c.category, shape: c.shape || c.category,
+        purpose: c.purpose || null, purpose_reason: c.purpose_reason || '',
+        purpose_confidence: c.purpose_confidence || null,
+        reason: c.reason, n: c.n, stale: !!c.stale, last_seen: c.last_seen ?? null,
+        co_change: c.co_change || [], co_change_scores: c.co_change_scores || {},
       })
       known.add(c.p_name)
     }
@@ -578,28 +665,52 @@ function ensureRowsForPNames(pNames) {
   }
 }
 
-// 已勾选/已确认的参数排到列表最前面，方便一眼看到之前筛选的结果
-function sortRowsCheckedFirst() {
-  paramRows.value = [...paramRows.value].sort((a, b) => (b.checked ? 1 : 0) - (a.checked ? 1 : 0))
+// 智能筛选后按分类排序、同变参数排在一起，避免来回滚动找
+const CAT_ORDER = { pulse: 0, increasing: 1, decreasing: 2, fluctuating: 3, constant: 4, nodata: 5 }
+function sortRowsByCategory() {
+  paramRows.value = [...paramRows.value].sort((a, b) => {
+    const ca = CAT_ORDER[a.category] ?? 5
+    const cb = CAT_ORDER[b.category] ?? 5
+    if (ca !== cb) return ca - cb
+    // 同分类内：同变参数用组成员集合做 key，自然聚拢
+    const ga = [a.p_name, ...(a.co_change || [])].sort().join(',')
+    const gb = [b.p_name, ...(b.co_change || [])].sort().join(',')
+    if (ga !== gb) return ga < gb ? -1 : 1
+    return a.p_name < b.p_name ? -1 : 1
+  })
 }
 
-// ── 参数曲线预览（最近 1 天）：筛选/脉搏 两个 tab 共用，同时只展开一个 ──
-const expandedParam = ref('')
-const previewLoading = ref('')
-const previewErr = ref('')
-const previewSeries = ref({})   // p_name -> [[tsMs, value], ...]
-const previewDateRanges = ref({}) // p_name -> { start, end, label, offsetDays }
-let previewEl = null
-let previewChart = null
+// ── 参数曲线预览（最近 1 天）：筛选/脉搏 两个 tab 共用，支持同时展开多个 ──
+const expandedParams = ref(new Set())
+const previewLoading = ref(new Set())
+const previewErrs = ref({})          // p_name -> error message
+const previewSeries = ref({})        // p_name -> [[tsMs, value], ...]
+const previewDateRanges = ref({})    // p_name -> { start, end, label, offsetDays }
+const previewStarts = ref({})        // p_name -> datetime-local string
+const previewEnds = ref({})          // p_name -> datetime-local string
+const previewEls = new Map()         // p_name -> DOM element
+const previewCharts = new Map()      // p_name -> echarts instance
 
-function setPreviewEl(el) {
-  previewEl = el
-  if (!el) disposePreview()
+function setPreviewEl(el, pName) {
+  if (el) {
+    previewEls.set(pName, el)
+  } else {
+    previewEls.delete(pName)
+  }
 }
 
-function disposePreview() {
-  if (previewChart && !previewChart.isDisposed()) previewChart.dispose()
-  previewChart = null
+function disposePreview(pName) {
+  const chart = previewCharts.get(pName)
+  if (chart && !chart.isDisposed()) chart.dispose()
+  previewCharts.delete(pName)
+}
+
+function disposeAllPreviews() {
+  for (const [, chart] of previewCharts) {
+    if (!chart.isDisposed()) chart.dispose()
+  }
+  previewCharts.clear()
+  previewEls.clear()
 }
 
 function _fmtApi(d) {
@@ -614,53 +725,90 @@ function _fmtRangeLabel(start, end, offsetDays) {
   return `${offsetDays}天前·24小时（${fmt(start)} - ${fmt(end)}）`
 }
 
+function _fmtLocal(d) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function _fmtCustomLabel(start, end) {
+  const pad = (n) => String(n).padStart(2, '0')
+  const fmt = (d) => `${d.getMonth() + 1}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `自定义（${fmt(start)} - ${fmt(end)}）`
+}
+
 async function togglePreview(pName) {
-  if (expandedParam.value === pName) {
-    expandedParam.value = ''
-    disposePreview()
+  if (expandedParams.value.has(pName)) {
+    expandedParams.value = new Set([...expandedParams.value].filter(p => p !== pName))
+    disposePreview(pName)
     return
   }
-  disposePreview()
-  expandedParam.value = pName
-  if (!previewSeries.value[pName]) await loadPreview(pName)
+  expandedParams.value = new Set([...expandedParams.value, pName])
+  if (!previewSeries.value[pName]) {
+    await loadPreview(pName)
+  } else {
+    const r = previewDateRanges.value[pName]
+    if (r) {
+      previewStarts.value = { ...previewStarts.value, [pName]: _fmtLocal(r.start) }
+      previewEnds.value = { ...previewEnds.value, [pName]: _fmtLocal(r.end) }
+    }
+  }
   await nextTick()
   renderPreview(pName)
 }
 
-async function loadPreview(pName) {
-  previewLoading.value = pName
-  previewErr.value = ''
-  const MAX_LOOKBACK_DAYS = 30 // 最多往前找 30 天
+async function loadPreview(pName, customStart, customEnd) {
+  previewLoading.value = new Set([...previewLoading.value, pName])
+  previewErrs.value = { ...previewErrs.value, [pName]: '' }
+  const isCustom = !!(customStart && customEnd)
   try {
-    const now = new Date()
     let foundData = null
     let foundStart = null
     let foundEnd = null
     let foundOffset = 0
 
-    for (let offsetDays = 0; offsetDays < MAX_LOOKBACK_DAYS; offsetDays++) {
-      const end = new Date(now.getTime() - offsetDays * 24 * 3600 * 1000)
-      const start = new Date(end.getTime() - 24 * 3600 * 1000)
+    if (isCustom) {
+      foundStart = new Date(String(customStart).replace(' ', 'T'))
+      foundEnd = new Date(String(customEnd).replace(' ', 'T'))
       const res = await getDeviceParamData({
         device_code: selectedDevice.value,
-        start_time: _fmtApi(start),
-        end_time: _fmtApi(end),
-        limit: 20000,
+        start_time: customStart,
+        end_time: customEnd,
+        limit: 50000,
         interval: 'auto',
         p_names: [pName],
       })
       if (res.code === 200 && res.data?.series) {
-        const pts = res.data.series[pName] || []
-        if (pts.length > 0) {
-          foundData = pts
-          foundStart = start
-          foundEnd = end
-          foundOffset = offsetDays
+        foundData = res.data.series[pName] || []
+      } else {
+        previewErrs.value = { ...previewErrs.value, [pName]: res.msg || '加载失败' }
+      }
+    } else {
+      const now = new Date()
+      const MAX_LOOKBACK_DAYS = 30 // 最多往前找 30 天
+      for (let offsetDays = 0; offsetDays < MAX_LOOKBACK_DAYS; offsetDays++) {
+        const end = new Date(now.getTime() - offsetDays * 24 * 3600 * 1000)
+        const start = new Date(end.getTime() - 24 * 3600 * 1000)
+        const res = await getDeviceParamData({
+          device_code: selectedDevice.value,
+          start_time: _fmtApi(start),
+          end_time: _fmtApi(end),
+          limit: 20000,
+          interval: 'auto',
+          p_names: [pName],
+        })
+        if (res.code === 200 && res.data?.series) {
+          const pts = res.data.series[pName] || []
+          if (pts.length > 0) {
+            foundData = pts
+            foundStart = start
+            foundEnd = end
+            foundOffset = offsetDays
+            break
+          }
+        } else {
+          previewErrs.value = { ...previewErrs.value, [pName]: res.msg || '加载失败' }
           break
         }
-      } else {
-        previewErr.value = res.msg || '加载失败'
-        break
       }
     }
 
@@ -674,30 +822,52 @@ async function loadPreview(pName) {
         ...previewSeries.value,
         [pName]: mappedPts,
       }
+      const label = isCustom
+        ? _fmtCustomLabel(foundStart, foundEnd)
+        : _fmtRangeLabel(foundStart, foundEnd, foundOffset)
       previewDateRanges.value = {
         ...previewDateRanges.value,
         [pName]: {
           start: foundStart,
           end: foundEnd,
-          label: _fmtRangeLabel(foundStart, foundEnd, foundOffset),
+          label,
           offsetDays: foundOffset,
         },
       }
+      previewStarts.value = { ...previewStarts.value, [pName]: _fmtLocal(foundStart) }
+      previewEnds.value = { ...previewEnds.value, [pName]: _fmtLocal(foundEnd) }
     }
   } catch (e) {
-    previewErr.value = '加载失败：' + (e?.message || '请求异常')
+    previewErrs.value = { ...previewErrs.value, [pName]: '加载失败：' + (e?.message || '请求异常') }
   } finally {
-    previewLoading.value = ''
+    const next = new Set(previewLoading.value)
+    next.delete(pName)
+    previewLoading.value = next
   }
+}
+
+async function queryPreview(pName) {
+  if (!previewStarts.value[pName] || !previewEnds.value[pName]) return
+  const startStr = _fmtApi(new Date(String(previewStarts.value[pName]).replace(' ', 'T')))
+  const endStr = _fmtApi(new Date(String(previewEnds.value[pName]).replace(' ', 'T')))
+  disposePreview(pName)
+  await loadPreview(pName, startStr, endStr)
+  await nextTick()
+  renderPreview(pName)
 }
 
 function renderPreview(pName) {
   const data = previewSeries.value[pName]
-  if (!previewEl || !data || data.length === 0) return
-  if (!previewChart || previewChart.isDisposed()) previewChart = echarts.init(previewEl)
-  previewChart.setOption({
+  const el = previewEls.get(pName)
+  if (!el || !data || data.length === 0) return
+  let chart = previewCharts.get(pName)
+  if (!chart || chart.isDisposed()) {
+    chart = echarts.init(el)
+    previewCharts.set(pName, chart)
+  }
+  chart.setOption({
     animation: false,
-    grid: { left: 52, right: 16, top: 16, bottom: 24 },
+    grid: { left: 52, right: 16, top: 16, bottom: 44 },
     tooltip: { trigger: 'axis', confine: true },
     xAxis: { type: 'time', axisLabel: { fontSize: 10, hideOverlap: true } },
     yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 10 } },
@@ -706,8 +876,12 @@ function renderPreview(pName) {
       type: 'line', showSymbol: false, sampling: 'lttb',
       lineStyle: { width: 1.2 }, itemStyle: { color: '#6366f1' }, data,
     }],
+    dataZoom: [
+      { type: 'slider', start: 0, end: 100, height: 20, bottom: 10, borderColor: '#e5e7eb', fillerColor: 'rgba(99,102,241,0.1)', handleStyle: { color: '#6366f1' } },
+      { type: 'inside' },
+    ],
   }, true)
-  previewChart.resize()
+  chart.resize()
 }
 
 function toggleAll(check) {
@@ -730,7 +904,7 @@ async function loadScreenStateFromDb() {
     ensureRowsForPNames(saved.checked_params)
     if (saved.pulse_param) ensureRowsForPNames([saved.pulse_param])
     applyCheckedList(saved.checked_params)
-    sortRowsCheckedFirst()
+    sortRowsByCategory()
 
     const parts = []
     if (saved.checked_params?.length) parts.push(`已筛选 ${saved.checked_params.length} 个参数`)
@@ -754,16 +928,21 @@ function onDeviceChange() {
   pulseResult.value = null
   pulseFilter.value = ''
   screenSummary.value = ''
+  purposeSummary.value = ''
+  sampleInfo.value = ''
   screenNote.value = ''
   screenSaveNote.value = ''
   pulseSaveNote.value = ''
   stateLoadNote.value = ''
   stateLoadErr.value = false
-  expandedParam.value = ''
+  expandedParams.value = new Set()
   previewSeries.value = {}
   previewDateRanges.value = {}
-  previewErr.value = ''
-  disposePreview()
+  previewStarts.value = {}
+  previewEnds.value = {}
+  previewErrs.value = {}
+  previewLoading.value = new Set()
+  disposeAllPreviews()
   profileRows.value = []
   profileNote.value = ''
   if (selectedDevice.value) {
@@ -788,8 +967,14 @@ function persistScreenState(step) {
   // （后端对未传字段保留原值）
   if (!stateLoadErr.value) {
     payload.classified = paramRows.value.map(r => ({
-      p_name: r.p_name, category: r.category, reason: r.reason,
+      p_name: r.p_name, category: r.category, shape: r.shape || r.category, reason: r.reason,
+      // 用途要存下来：人工设定过的(manual)在下次重新筛选时不能被规则覆盖
+      purpose: r.purpose || null,
+      purpose_reason: r.purpose_reason || '',
+      purpose_confidence: r.purpose_confidence || null,
       checked: r.checked, n: r.n, stale: r.stale, last_seen: r.last_seen,
+      co_change: r.co_change || [],
+      co_change_scores: r.co_change_scores || {},
     }))
     payload.checked_params = checkedParams.value
   }
@@ -810,8 +995,10 @@ async function startScreening() {
     }, { timeout: 0 })
     if (res.code === 200 && res.data) {
       applyClassifiedToRows(res.data.classified, true)
-      sortRowsCheckedFirst()
+      sortRowsByCategory()
       screenSummary.value = res.data.summary || ''
+      purposeSummary.value = res.data.purpose_summary || ''
+      sampleInfo.value = res.data.sample_info || ''
     } else {
       screenNote.value = res.msg || res.detail || '智能筛选失败'
     }
@@ -1090,8 +1277,15 @@ async function recalcCpkRow(row) {
   }
 }
 
+watch(activeTab, async () => {
+  if (expandedParams.value.size) {
+    await nextTick()
+    for (const pName of expandedParams.value) renderPreview(pName)
+  }
+})
+
 onUnmounted(() => {
-  disposePreview()
+  disposeAllPreviews()
 })
 
 onMounted(() => {

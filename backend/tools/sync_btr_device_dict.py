@@ -28,8 +28,8 @@ electricity 电表本身不在 MySQL 里（MySQL 只管生产设备），所以�
   docker exec industrial-ai python /tmp/sync_btr_device_dict.py --dry-run  # 只预览不写库
 
 连接参数：固定值，与 sync_business_tables.py 一致
-  MySQL: 192.168.50.213:3306/btr
-  PG:    192.168.50.224:15432/knowledge_base
+  MySQL: CHANGE_ME:3306/btr
+  PG:    CHANGE_ME:15432/knowledge_base
 """
 import sys
 import argparse
@@ -42,10 +42,10 @@ from psycopg2.extras import execute_values
 
 def connect_mysql():
     cfg = dict(
-        host="192.168.50.213",
+        host="CHANGE_ME",
         port=3306,
-        user="CHANGE_MEonly_user",
-        password="CHANGE_ME@2026",
+        user="readonly_user",
+        password="CHANGE_ME",
         database="btr",
         charset="utf8mb4",
         connect_timeout=10,
@@ -57,11 +57,11 @@ def connect_mysql():
 
 def connect_pg():
     kwargs = dict(
-        host="192.168.50.224",
+        host="CHANGE_ME",
         port="15432",
         dbname="knowledge_base",
         user="zxzz",
-        password="CHANGE_ME@Zxzz",
+        password="CHANGE_ME",
         connect_timeout=10,
     )
     print(f"[PG] 连接 {kwargs['host']}:{kwargs['port']}/{kwargs['dbname']} ...")

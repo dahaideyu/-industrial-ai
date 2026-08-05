@@ -1,11 +1,11 @@
-MQTT_BROKER=101.133.134.25
+MQTT_BROKER=CHANGE_ME
 MQTT_PORT=1883
 MQTT_TOPIC=Alarm/chaowei/jxcw
 # 新增：NH topic，数据结构未知，先原样落库到 device_nh_raw，等跑起来拿到真实
 # 样例后再改造成结构化解析（见 README「device_nh_raw」）
 MQTT_TOPIC_NH=NH/chaowei/jxcw
 MQTT_USER=admin
-MQTT_PASS=zxzz@4*cloud-2022!
+MQTT_PASS=CHANGE_ME
 MQTT_QOS=0
 
 

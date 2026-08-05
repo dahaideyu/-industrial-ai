@@ -4,7 +4,7 @@
 # 字段说明:
 #   template:           提示词模板文件名
 #   output_name:        报告输出名称
-#   use_raw_data:          是否注入接口原始数据（仅第1份报告需要）
+#   use_raw_data:          是否注入接口原始数据（第1份和第4份报告需要）
 #   use_ragflow:           是否使用知识库（仅第3份报告需要）
 #   context_from_index:    使用前序第 N 份报告作为上下文（0=第1份, 1=第2份）
 #   use_historical_context: 是否加载历史报告用于趋势对比（仅第2份报告需要）
@@ -13,6 +13,7 @@
 #   第1份: 原始数据 → 基础报告
 #   第2份: 第1份报告 + 历史报告 → 趋势分析
 #   第3份: 第2份报告 + 知识库   → 改善建议
+#   第4份: 原始数据 + 临时班组候选配置 → 班次/班组绩效对比
 
 report_mapping:
 
@@ -39,6 +40,11 @@ report_mapping:
         use_raw_data: false
         use_ragflow: true
         context_from_index: 1
+
+      - template: "lean_morning_daily_report04.txt"
+        output_name: "班次/班组绩效对比"
+        use_raw_data: true
+        use_ragflow: false
 
   # ========================================
   # 工厂级早会日报

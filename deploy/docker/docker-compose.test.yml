@@ -1,12 +1,15 @@
 # 测试环境覆盖配置
-# 用法: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.test.yml up -d
-# 测试服务器资源有限（2核），降低各服务资源限制
+# 用法: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.test.yml --profile local-db up -d
+# （PG 与生产一致放容器内，需 --profile local-db 启动 postgresql；跑 mqtt-etl 再加 --profile mqtt）
+# 测试服务器资源有限（2核），降低各服务资源限制 + 跳过 Cython 源码编译（COMPILE_SOURCE 默认 false）
+# 注意：build args 必须用变量引用 ${COMPILE_SOURCE:-false}，不能写死 "true"。
+#       之前写死成 "true" 会导致流水线里 COMPILE_SOURCE=false 被覆盖，照常编译。
 
 services:
   industrial-ai:
     build:
       args:
-        COMPILE_SOURCE: "false"
+        COMPILE_SOURCE: "${COMPILE_SOURCE:-false}"
     container_name: industrial-ai-test
     env_file:
       - ./.env.test
@@ -40,7 +43,7 @@ services:
   knb-celery-worker:
     build:
       args:
-        COMPILE_SOURCE: "false"
+        COMPILE_SOURCE: "${COMPILE_SOURCE:-false}"
     env_file:
       - ./.env.test
     deploy:
@@ -52,6 +55,6 @@ services:
   mqtt-etl:
     build:
       args:
-        COMPILE_SOURCE: "false"
+        COMPILE_SOURCE: "${COMPILE_SOURCE:-false}"
     env_file:
       - ./.env.test

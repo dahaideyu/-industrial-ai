@@ -2,9 +2,16 @@
 import os
 import sys
 import argparse
-import dotenv
 import logging
 from contextlib import asynccontextmanager
+
+# 确保无论从哪里启动（backend/ 或项目根目录），backend/ 下的包都能被正确导入
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(backend_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
 
 def parse_args():
@@ -18,78 +25,42 @@ def parse_args():
                         help="指定环境配置文件路径（如 .env.prod.shandong）")
     parser.add_argument("-m", "--model", type=str, default=None,
                         help="指定模型供应商（如 deepseek、qwen3、openai、local_qwen3）")
+    parser.add_argument("--host", type=str, default=None,
+                        help="监听地址，覆盖 FASTAPI_HOST（默认 0.0.0.0）")
+    parser.add_argument("-p", "--port", type=int, default=None,
+                        help="监听端口，覆盖 FASTAPI_PORT（默认 9300）")
     args, _ = parser.parse_known_args()
     return args
 
 
-# 解析命令行参数并加载环境配置
+# 解析命令行参数
 _args = parse_args()
 
-if _args.env:
-    _env_path = _args.env
-    if not os.path.isabs(_env_path):
-        _env_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            _env_path
-        )
-    if not os.path.exists(_env_path):
-        print(f"[错误] 配置文件不存在: {_env_path}")
-        sys.exit(1)
-    dotenv.load_dotenv(_env_path)
-    print(f"[启动] 已加载配置文件: {_env_path}")
-else:
-    dotenv.load_dotenv()
+# 统一的 .env 加载入口（详见 core/env.py），优先级：--env > deploy/docker/.env > backend/.env > 项目根/.env
+from core.env import load_env
+load_env(explicit_path=_args.env)
 
 # -m 参数覆盖模型供应商
 if _args.model:
     os.environ["PROVIDER"] = _args.model
     print(f"[启动] 模型供应商已覆盖为: {_args.model}")
 
-# 确保无论从哪里启动（backend/ 或项目根目录），backend/ 下的包都能被正确导入
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(backend_dir)
-# 添加项目根目录到 sys.path，使得 from backend.xxx import 可以正常工作
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-# 同时添加 backend_dir，支持直接 import clients.xxx
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
+# --host/--port 覆盖 FASTAPI_HOST/FASTAPI_PORT（run.bat -h/-p 走这里传进来）
+if _args.host:
+    os.environ["FASTAPI_HOST"] = _args.host
+if _args.port:
+    os.environ["FASTAPI_PORT"] = str(_args.port)
 
-# 优先加载 docker/.env，然后是 backend/.env，最后是项目根目录/.env
-docker_env_path = os.path.join(project_root, "docker", ".env")
-backend_env_path = os.path.join(backend_dir, ".env")
-project_root = os.path.dirname(backend_dir)
-project_env_path = os.path.join(project_root, ".env")
-
-env_loaded_path = None
-if os.path.isfile(docker_env_path):
-    dotenv.load_dotenv(docker_env_path)
-    env_loaded_path = docker_env_path
-elif os.path.isfile(backend_env_path):
-    dotenv.load_dotenv(backend_env_path)
-    env_loaded_path = backend_env_path
-elif os.path.isfile(project_env_path):
-    dotenv.load_dotenv(project_env_path)
-    env_loaded_path = project_env_path
-else:
-    dotenv.load_dotenv()  # 兜底：尝试默认位置
-
-# 配置日志（级别从 LOG_LEVEL 环境变量读取，默认 INFO）
-log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# 配置日志（集中式，级别从 LOG_LEVEL 环境变量读取，默认 INFO；可选 LOG_FORMAT=json 输出结构化日志）
+from core.logging_config import setup_logging
+setup_logging()
 logger = logging.getLogger(__name__)
-
-if env_loaded_path:
-    logger.info(f"已加载环境变量文件: {env_loaded_path}")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.response import success_response
-from routes import health_router, report_router, analysis_router, jobs_router, document_router, alarms_router, system_jobs_router
+from routes import health_router, report_router, analysis_router, jobs_router, document_router, alarms_router, system_jobs_router, device_config_router
 from modules.auth import auth_router
 from modules.maintenance_report import maintenance_report_router
 from modules.device_param import device_param_router
@@ -232,6 +203,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ============================================================
+# 全局异常处理：确保所有 500 响应都返回带 msg 的 JSON
+# （FastAPI 默认返回 {"detail": "..."} 没有 msg 字段，
+#  前端 axios 拦截器找不到 msg 就回退成 "Request failed with status code 500"）
+# ============================================================
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        content={"code": exc.status_code, "msg": str(exc.detail)},
+        status_code=exc.status_code,
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(f"未处理异常: {request.method} {request.url.path}", exc_info=True)
+    return JSONResponse(
+        content={"code": 500, "msg": f"服务器内部错误: {exc}"},
+        status_code=500,
+    )
+
 # ============================================================
 # 注册路由
 # ============================================================
@@ -241,6 +239,7 @@ app.include_router(report_router)
 app.include_router(analysis_router)
 app.include_router(jobs_router)
 app.include_router(system_jobs_router)  # 系统管理 · 统一 Job 管理
+app.include_router(device_config_router)  # 系统管理 · 设备列表管理
 app.include_router(document_router)
 app.include_router(alarms_router)  # 报警记录查询
 app.include_router(maintenance_report_router)  # 预测性维护报告模块
@@ -326,4 +325,5 @@ def get_feature_flags():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("FASTAPI_PORT", 9300))
-    uvicorn.run("backend.app:app", host="0.0.0.0", port=port, reload=False)
+    host = os.getenv("FASTAPI_HOST", "0.0.0.0")
+    uvicorn.run("backend.app:app", host=host, port=port, reload=False)

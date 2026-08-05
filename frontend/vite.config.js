@@ -39,16 +39,9 @@ export default defineConfig({
     port: 5173,
     allowedHosts: true,
     proxy: {
-      // Repair suggestion → port 8000
-      '/api/repair-suggestion': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/api/repair-order-scoring': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
       // 统一后端 → port 9300（含主应用 + SQL-QA 模块）
+      // repair-suggestion 生产环境是独立进程/容器，走各自 nginx 配置；
+      // 本地开发未单独起该服务时，这两条会落到主 app 的 9300，无对应路由则 404
       '/api': {
         target: 'http://localhost:9300',
         changeOrigin: true,

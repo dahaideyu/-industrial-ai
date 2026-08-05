@@ -3,3 +3,55 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * 共享 UI 组件类。
+ *
+ * 此前 .btn-primary / .btn-ghost / .modal / .form-input 等在
+ * CollectionPlanDetail / DocumentManagement / KnowledgeBaseDetail /
+ * KnowledgeBaseList / KnowledgeOverview 五个文件中逐字复制，
+ * 每次改样式要改五处。现在集中在这里，各组件直接用即可。
+ *
+ * 注意：这些类定义在 @layer components 中，可以被组件内的
+ * scoped <style> 覆盖（scoped 优先级更高）。
+ */
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white text-[13px] font-medium rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-1 px-3 py-1.5 text-slate-500 text-[13px] font-medium rounded-lg hover:bg-slate-100 transition-colors disabled:opacity-50;
+  }
+  .btn-workflow {
+    @apply inline-flex items-center gap-1 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .form-group { @apply mb-3.5; }
+  .form-label { @apply block text-[13px] font-medium text-slate-700 mb-1; }
+  .form-input, .form-textarea {
+    @apply w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-shadow;
+  }
+  .form-textarea { @apply resize-none; }
+
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm;
+  }
+  .modal {
+    @apply bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6 animate-[modalIn_.2s_ease] max-h-[90vh] overflow-y-auto relative;
+  }
+  .modal h3 { @apply text-base font-bold text-slate-800 mb-4 pr-8; }
+  .modal-footer { @apply flex justify-end gap-3 mt-5; }
+  .modal-close-x {
+    @apply absolute top-3 right-3 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full text-2xl leading-none cursor-pointer;
+  }
+
+  .doc-type-tag { @apply inline-block px-2 py-0.5 rounded text-[11px] font-semibold; }
+  .status-badge { @apply inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold; }
+  .priority-tag { @apply inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold; }
+
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(.96) translateY(-8px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+}
+

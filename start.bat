@@ -4,11 +4,12 @@ setlocal enabledelayedexpansion
 REM ============================================
 REM Chaowei Agent 一键启动（仅前端 + 后端，不涉及 Docker）
 REM 用法: start.bat [--env 配置文件] [--model 模型名]
+REM 默认配置文件为项目根目录的 .env（本地开发的唯一权威配置）
 REM 依赖的数据库/Redis/MinIO 等基础设施需自行准备好（外部服务器或已起的 Docker 容器）
 REM 需要连 Docker 一起起的完整环境，用同目录下的 start_docker.bat
 REM ============================================
 
-set "ENV_FILE=%~dp0deploy\docker\.env"
+set "ENV_FILE=%~dp0.env"
 set "MODEL_ARG="
 
 :parse_args
@@ -43,10 +44,11 @@ echo ============================================
 echo.
 
 echo [1/2] 启动后端 (端口 9300)...
+echo       配置文件: %ENV_FILE%
 if "%MODEL_ARG%"=="" (
-    start "Backend" cmd /k "uv run python backend\app.py"
+    start "Backend" cmd /k "uv run python backend\app.py --env %ENV_FILE%"
 ) else (
-    start "Backend" cmd /k "uv run python backend\app.py %MODEL_ARG%"
+    start "Backend" cmd /k "uv run python backend\app.py --env %ENV_FILE% %MODEL_ARG%"
 )
 
 echo [2/2] 启动前端 (端口 5173)...

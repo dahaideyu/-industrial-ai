@@ -1,10 +1,34 @@
 stages:
+  - test
   - build
 
 variables:
   IMAGE_NAME: "industrial-ai"
   IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
   TAR_FILE: "${IMAGE_NAME}-${IMAGE_TAG}.tar"
+
+# ──────────── 前端 ESLint ────────────
+frontend:lint:
+  stage: test
+  image: node:22-alpine
+  only:
+    - master
+    - dev
+    - merge_requests
+  script:
+    - cd frontend && npm ci && npm run lint
+  allow_failure: true  # 规则还在收紧阶段，先不阻断
+
+# ──────────── 后端语法检查 ────────────
+backend:check:
+  stage: test
+  image: python:3.12-slim
+  only:
+    - master
+    - dev
+    - merge_requests
+  script:
+    - find backend mqtt_etl -name '*.py' -not -path '*/__pycache__/*' | xargs python -m py_compile
 
 build:image:
   stage: build

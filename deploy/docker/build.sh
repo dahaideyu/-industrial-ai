@@ -23,8 +23,6 @@ APP_IMAGE="${IMAGE_NAME}:${VERSION}"
 WORKER_IMAGE="${IMAGE_NAME}-worker:${VERSION}"
 LEAN_IMAGE="${IMAGE_NAME}-lean:${VERSION}"
 TAR_FILE="${IMAGE_NAME}-${VERSION}-bundle.tar"
-KEY_FILE="${SCRIPT_DIR}/build_key.txt"
-
 PG_IMAGE=$(grep -E 'image:.*timescale/timescaledb' "$SCRIPT_DIR/docker-compose.yml" | awk '{print $2}')
 if [ -z "$PG_IMAGE" ]; then
     echo "错误: 没能从 docker-compose.yml 里解析到 timescale/timescaledb 镜像名，脚本需要更新"
@@ -40,12 +38,11 @@ echo "数据库镜像: ${PG_IMAGE}"
 echo "============================================"
 echo ""
 
-# 0. 加密提示词（生成 key + 加密所有 prompts/*.txt → prompts_encrypted.json）
+# 0. 使用构建环境中预先配置的固定密钥加密提示词。
 echo "[0/5] 加密提示词..."
-if python "$PROJECT_ROOT/scripts/encrypt_prompts.py"; then
-    :
-else
-    echo "警告: 提示词加密失败，继续构建..."
+if ! python "$PROJECT_ROOT/scripts/encrypt_prompts.py"; then
+    echo "错误: 提示词加密失败，已停止构建。请检查 PROMPT_ENCRYPT_KEY。"
+    exit 1
 fi
 echo ""
 
@@ -89,27 +86,11 @@ echo ""
 echo "[5/5] 导出镜像到 ${TAR_FILE} ..."
 docker save -o "$TAR_FILE" "$APP_IMAGE" "$WORKER_IMAGE" "$LEAN_IMAGE" "$PG_IMAGE"
 
-# 读取密钥文件（由 encrypt_prompts.py 生成）
-ENCRYPT_KEY=""
-if [ -f "$KEY_FILE" ]; then
-    ENCRYPT_KEY=$(cat "$KEY_FILE")
-    rm -f "$KEY_FILE"
-fi
-
 echo "============================================"
 echo "打包完成!"
 echo ""
 echo "镜像文件: ${TAR_FILE}"
 echo ""
-if [ -n "$ENCRYPT_KEY" ]; then
-    echo "============================================"
-    echo "!! 提示词加密密钥（更新服务器 .env）!!"
-    echo ""
-    echo "PROMPT_ENCRYPT_KEY=${ENCRYPT_KEY}"
-    echo ""
-    echo "============================================"
-    echo ""
-fi
 echo "部署步骤（服务器上）:"
 echo "  1. 上传 ${TAR_FILE} 到服务器"
 echo "  2. docker load -i ${TAR_FILE}"
@@ -122,9 +103,4 @@ echo "     如果继续用外部数据库服务器，不需要本地这个 postg
 echo "       export IMAGE_TAG=${VERSION}"
 echo "       docker compose up -d"
 echo "  （不加 --build，加载进来的三个镜像会直接复用，不会在服务器上重新构建）"
-if [ -n "$ENCRYPT_KEY" ]; then
-    echo ""
-    echo "  5. 在服务器的 .env 中更新密钥:"
-    echo "     PROMPT_ENCRYPT_KEY=${ENCRYPT_KEY}"
-fi
 echo "============================================"

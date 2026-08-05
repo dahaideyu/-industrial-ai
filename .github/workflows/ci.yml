@@ -1,0 +1,56 @@
+name: CI Quality Gates
+
+# 在 deploy 之前运行代码质量检查（lint + test）。
+# deploy-dev.yml 只负责部署；本 workflow 负责拦截低级错误。
+
+on:
+  pull_request:
+    branches: [dev, master]
+  push:
+    branches: [dev, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────── 前端：ESLint + 构建 ────────────
+  frontend-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: ESLint
+        run: npm run lint
+        working-directory: frontend
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+
+  # ──────────── 后端：语法检查 + 测试 ────────────
+  backend-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: pip install uv
+      - name: Install dependencies
+        run: uv sync
+      - name: Compile check (all .py)
+        run: |
+          find backend mqtt_etl -name '*.py' -not -path '*/__pycache__/*' | xargs python -m py_compile
+      - name: Run tests
+        run: uv run pytest tests/ -v --tb=short
+        continue-on-error: true  # 测试尚未全覆盖，先不阻断

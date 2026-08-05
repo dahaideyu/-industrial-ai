@@ -1,39 +1,12 @@
-import axios from 'axios'
+import { createApiClient } from './createApiClient.js'
 
-const client = axios.create({
+const client = createApiClient({
   baseURL: '/api',
   timeout: 60000,
-  headers: { 'Content-Type': 'application/json' },
+  // 数组参数序列化为重复键（p_names=A&p_names=B），而不是 axios 默认的 p_names[]=A&p_names[]=B。
+  // FastAPI 只识别前者；否则 p_names 绑定失败，后端会退回查询全部点位，参数一多就慢/超时。
+  extra: { paramsSerializer: { indexes: null } },
 })
-
-// 请求拦截器：自动附加登录令牌
-client.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token')
-  if (token) {
-    config.headers = config.headers || {}
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-client.interceptors.response.use(
-  (res) => res.data,
-  (err) => {
-    const status = err.response?.status
-    // 登录失效：清理本地状态并跳转登录页（登录接口自身的 401 不跳转）
-    const url = err.config?.url || ''
-    if (status === 401 && !url.includes('/auth/login')) {
-      localStorage.removeItem('auth_token')
-      localStorage.removeItem('auth_user')
-      if (window.location.pathname !== '/login') {
-        window.location.assign('/login')
-      }
-    }
-    const msg = err.response?.data?.msg || err.message || '请求失败'
-    console.error('API Error:', msg)
-    return Promise.reject(new Error(msg))
-  }
-)
 
 export default client
 
@@ -313,6 +286,17 @@ export async function saveSystemJobConfig(payload) {
 }
 export async function getSystemJobRuns(jobId, params) {
   return client.get(`/system/jobs/${encodeURIComponent(jobId)}/runs`, { params })
+}
+
+// ── 系统管理 · 设备列表管理 ──
+export async function getSystemDevices() {
+  return client.get('/system/devices')
+}
+export async function saveDeviceVisibility(devices) {
+  return client.post('/system/devices/visibility', { devices })
+}
+export async function syncSystemDevices() {
+  return client.post('/system/devices/sync', {}, { timeout: 0 })
 }
 
 export async function getDriftConfig(deviceCode) {

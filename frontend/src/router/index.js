@@ -15,8 +15,9 @@ const routes = [
   { path: '/param-setup', component: () => import('../views/ParamSetup.vue') },
   { path: '/device-params', component: () => import('../views/DeviceParams.vue') },
   { path: '/param-intelligence', component: () => import('../views/ParamIntelligence.vue') },
-  // 系统管理 · 统一 Job 管理
+  // 系统管理 · 统一 Job 管理 / 设备列表管理
   { path: '/system/jobs', component: () => import('../views/SystemJobs.vue') },
+  { path: '/system/device-visibility', component: () => import('../views/DeviceVisibility.vue') },
   // SQL-QA 智能问答平台
   { path: '/sql-qa', component: () => import('../views/sql_qa/SqlQaLayout.vue'), children: [
     { path: '', name: 'sql-qa-chat', component: () => import('../views/sql_qa/ChatPage.vue') },
@@ -74,6 +75,7 @@ router.afterEach((to) => {
     '/device-params': '设备参数 - Industrial Intelligence',
     '/param-intelligence': '参数智能 - Industrial Intelligence',
     '/system/jobs': '任务管理 - Industrial Intelligence',
+    '/system/device-visibility': '设备列表 - Industrial Intelligence',
     '/sql-qa': '智能问答 - Industrial Intelligence',
     '/knowledge-management': '知识库管理 - Industrial Intelligence',
     '/knowledge-qa': '知识库问答 - Industrial Intelligence',

@@ -1,23 +1,13 @@
 # cython: annotation_typing=False, infer_types=False, language_level=3
 import os
 import sys
-import dotenv
+import logging
 
-# 优先加载 docker/.env，然后是 backend/.env，最后是项目根目录/.env
-backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-project_root = os.path.dirname(backend_dir)
-docker_env_path = os.path.join(project_root, "deploy", "docker", ".env")
-backend_env_path = os.path.join(backend_dir, ".env")
-project_env_path = os.path.join(project_root, ".env")
+# 统一的 .env 加载入口：幂等，若 app.py 已加载过则直接返回，不再二次加载选到不同文件
+from core.env import load_env
+load_env()
 
-if os.path.isfile(docker_env_path):
-    dotenv.load_dotenv(docker_env_path)
-elif os.path.isfile(backend_env_path):
-    dotenv.load_dotenv(backend_env_path)
-elif os.path.isfile(project_env_path):
-    dotenv.load_dotenv(project_env_path)
-else:
-    dotenv.load_dotenv()  # 兜底：尝试默认位置
+logger = logging.getLogger(__name__)
 
 CONFIG = {
     "provider": None,
@@ -61,16 +51,13 @@ def load_config():
     CONFIG["base_url"] = base_url
     CONFIG["api_key"] = api_key
 
-    print(f"[配置] 已加载模型配置:")
-    print(f"[配置]   供应商: {provider}")
-    print(f"[配置]   模型: {model}")
-    print(f"[配置]   API 地址: {base_url}")
+    logger.info("已加载模型配置: provider=%s model=%s base_url=%s", provider, model, base_url)
 
 
 try:
     load_config()
 except Exception as e:
-    print(f"[错误] 配置加载失败: {e}")
+    logger.error("配置加载失败: %s", e)
     sys.exit(1)
 
 

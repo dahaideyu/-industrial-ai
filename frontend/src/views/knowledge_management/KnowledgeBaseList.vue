@@ -213,6 +213,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useKnowledgeManagement } from '../../composables/knowledge_management/useKnowledgeManagement.js'
 import { getDashboardBase, syncDeviceTypes, getKbDocumentsTree } from '../../api/knowledgeManagementClient.js'
+import { formatDate } from '../../utils/format.js'
 import CustomSelect from './components/CustomSelect.vue'
 import HierarchyTree from './components/HierarchyTree.vue'
 
@@ -440,21 +441,10 @@ async function handleSyncDeviceTypes() {
   }
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  try { return new Date(dateStr).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) } catch { return dateStr }
-}
 </script>
 
 <style scoped>
-.btn-primary {
-  @apply inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white text-[13px] font-medium rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
-}
-.btn-ghost {
-  @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-slate-500 text-[13px] font-medium rounded-lg hover:bg-slate-100 transition-colors;
-}
 .score-circle {
   @apply inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold;
 }
-@keyframes modalIn { from { opacity: 0; transform: scale(.96) translateY(-8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 </style>

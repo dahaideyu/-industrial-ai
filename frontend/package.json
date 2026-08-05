@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src --ext .js,.vue",
+    "lint:fix": "eslint src --ext .js,.vue --fix"
   },
   "dependencies": {
     "axios": "^1.8.0",
@@ -20,6 +22,8 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.0",
     "autoprefixer": "^10.4.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.32.0",
     "postcss": "^8.5.0",
     "rollup-plugin-javascript-obfuscator": "^1.0.4",
     "tailwindcss": "^3.4.0",

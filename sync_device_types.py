@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 # ==================== 数据库配置（写死）====================
 MYSQL_CONFIG = {
-    "host": "192.168.50.227",
+    "host": "CHANGE_ME",
     "port": 3306,
     "user": "zxzz",
     "password": "CHANGE_ME",
@@ -23,7 +23,7 @@ MYSQL_CONFIG = {
 }
 
 PG_CONFIG = {
-    "host": "192.168.50.227",
+    "host": "CHANGE_ME",
     "port": 15432,
     "user": "postgres",
     "password": "CHANGE_ME",

@@ -2,14 +2,15 @@
 import logging
 from datetime import datetime, date
 from typing import Tuple
-from .deepseek_service import DeepSeekService
+from .llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 
 
 class ScoringService:
-    def __init__(self):
-        self.deepseek_service = DeepSeekService()
+    def __init__(self) -> None:
+        """初始化通用 LLM 评分服务。"""
+        self.llm_service = LLMService()
 
     async def score_task(
         self,
@@ -52,7 +53,7 @@ class ScoringService:
             reasons.append("未上传文件，扣1星")
 
         # 3. AI质量评分（1-3星）
-        ai_score, ai_reason, ai_err = await self.deepseek_service.score_task_quality(
+        ai_score, ai_reason, ai_err = await self.llm_service.score_task_quality(
             task_description, handle_action
         )
         if ai_err:
@@ -147,7 +148,7 @@ class ScoringService:
         ai_detected_replace = False
         if not is_replace_spare:
             # 请求中说未更换，但需要通过AI从处理措施中检测是否实际更换了
-            has_replacement, detect_err = await self.deepseek_service.detect_spare_replacement(handle_action)
+            has_replacement, detect_err = await self.llm_service.detect_spare_replacement(handle_action)
             if detect_err:
                 logger.warning(f"[Scoring] 备件检测失败: {detect_err}")
             elif has_replacement:
@@ -156,7 +157,7 @@ class ScoringService:
                 logger.info(f"[Scoring] AI检测到处理措施中实际更换了备件")
 
         # 4. AI质量评分
-        ai_score, ai_reason, ai_err = await self.deepseek_service.score_content_quality(
+        ai_score, ai_reason, ai_err = await self.llm_service.score_content_quality(
             handle_analysis, handle_action, actual_replace_spare
         )
         if ai_err:

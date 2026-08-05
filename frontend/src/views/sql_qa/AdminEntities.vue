@@ -391,7 +391,7 @@ const editAliasForm = ref({ entity_type: '', alias: '', canonical_name: '', cano
 const showAliasImport = ref(false)
 
 async function loadAliases() {
-  try { const d = await listAliases(); aliases.value = d.aliases || [] } catch {}
+  try { const d = await listAliases(); aliases.value = d.aliases || [] } catch (e) { console.error('[AdminEntities] 加载别名失败:', e) }
 }
 onMounted(loadAliases)
 
@@ -442,10 +442,9 @@ async function handleExportAliases() {
     const r = await fetch('/api/admin/entities/aliases/export')
     const blob = await r.blob()
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'entity-aliases-export.json'; a.click(); URL.revokeObjectURL(a.href)
-  } catch {}
+  } catch (e) { console.error('[AdminEntities] 导出别名失败:', e) }
 }
 
-// ===== Metrics Manager =====
 const metrics = ref([])
 const metricForm = ref({ name: '', description: '', keywords: '' })
 const metricLoading = ref(false)
@@ -454,7 +453,7 @@ const editMetricForm = ref({ name: '', description: '', keywords: '' })
 const showMetricImport = ref(false)
 
 async function loadMetrics() {
-  try { const d = await listMetrics(); metrics.value = d.metrics || [] } catch {}
+  try { const d = await listMetrics(); metrics.value = d.metrics || [] } catch (e) { console.error('[AdminEntities] 加载指标失败:', e) }
 }
 onMounted(loadMetrics)
 
@@ -505,10 +504,9 @@ async function handleExportMetrics() {
     const r = await fetch('/api/admin/entities/metrics/export')
     const blob = await r.blob()
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'custom-metrics-export.json'; a.click(); URL.revokeObjectURL(a.href)
-  } catch {}
+  } catch (e) { console.error('[AdminEntities] 导出指标失败:', e) }
 }
 
-// ===== Entity Tools =====
 const searchType = ref('production_line')
 const searchKw = ref('')
 const searchResults = ref([])
@@ -547,10 +545,10 @@ async function loadEntityConfigs() {
         aliasForm.value.entity_type = firstType
       }
     }
-  } catch {}
+  } catch (e) { console.error('[AdminEntities] 加载实体配置失败:', e) }
 }
 async function loadTables() {
-  try { const d = await listTables(); allTables.value = d.tables || [] } catch {}
+  try { const d = await listTables(); allTables.value = d.tables || [] } catch (e) { console.error('[AdminEntities] 加载表列表失败:', e) }
 }
 watch(() => entityForm.value.table_name, () => onTableChange())
 
@@ -606,7 +604,7 @@ async function saveEntity() {
 async function delEntityConfig(id) {
   const ok = await confirm({ message: '确认删除此实体配置？不影响已索引的数据。', danger: true })
   if (!ok) return
-  try { await deleteEntityConfig(id); await loadEntityConfigs() } catch {}
+  try { await deleteEntityConfig(id); await loadEntityConfigs() } catch (e) { console.error('[AdminEntities] 删除实体配置失败:', e) }
 }
 async function doSearch() {
   if (!searchKw.value) return
@@ -614,7 +612,7 @@ async function doSearch() {
   try {
     const d = await searchEntities({ entity_type: searchType.value, keyword: searchKw.value, limit: 10 })
     searchResults.value = d.results || []
-  } catch {} finally { searchLoading.value = false }
+  } catch (e) { console.error('[AdminEntities] 搜索失败:', e) } finally { searchLoading.value = false }
 }
 async function doRebuild() {
   indexLoading.value = true; indexMsg.value = '正在重建索引...'
@@ -629,7 +627,7 @@ async function loadGraphStatus() {
   try {
     const d = await getGraphStatus()
     graphStatus.value = d.status || { available: false }
-  } catch {}
+  } catch (e) { console.error('[AdminEntities] 加载图谱状态失败:', e) }
 }
 
 async function openGraphMappingEditor() {

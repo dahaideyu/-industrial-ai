@@ -7,8 +7,9 @@ try:
     from .document import router as document_router
     from .alarms import router as alarms_router
     from .system_jobs import router as system_jobs_router
+    from .device_config import router as device_config_router
 
-    __all__ = ["health_router", "report_router", "analysis_router", "jobs_router", "document_router", "alarms_router", "system_jobs_router"]
+    __all__ = ["health_router", "report_router", "analysis_router", "jobs_router", "document_router", "alarms_router", "system_jobs_router", "device_config_router"]
 except ImportError as e:
     # Agent 路由模块不可用时静默跳过（SQL-QA 子项目不需要这些）
     import logging

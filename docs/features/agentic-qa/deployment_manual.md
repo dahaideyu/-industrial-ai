@@ -49,7 +49,7 @@
             ┌───────────────────┼───────────────────┐
             ▼                   ▼                    ▼
       MySQL (外部)       RAGFlow (外部)       DeepSeek API
-      CHANGE_ME:3306   10.1.2.232:9380      api.deepseek.com
+      CHANGE_ME:3306   CHANGE_ME:9380      api.deepseek.com
 ```
 
 **设计要点：**
@@ -274,10 +274,10 @@ ENABLE_SQL_QA=true docker compose -f docker/docker-compose.yml -f docker/docker-
 | `MYSQL_USER` | 数据库用户名 | `zxzz` |
 | `MYSQL_PASSWORD` | 数据库密码 | `your-password` |
 | `MYSQL_DATABASE` | 数据库名 | `jxcw` |
-| `RAGFLOW_API_URL` | RAGFlow 服务地址 | `http://10.1.2.232:9380` |
+| `RAGFLOW_API_URL` | RAGFlow 服务地址 | `http://CHANGE_ME:9380` |
 | `RAGFLOW_API_KEY` | RAGFlow API 密钥 | `ragflow-xxx` |
 | `RAGFLOW_CHAT_ID` | RAGFlow 聊天助手 ID | `xxx` |
-| `NEO4J_URI` | Neo4j 图数据库地址 | `neo4j://10.1.2.232:7687` |
+| `NEO4J_URI` | Neo4j 图数据库地址 | `neo4j://CHANGE_ME:7687` |
 | `NEO4J_USER` | Neo4j 用户名 | `neo4j` |
 | `NEO4J_PASSWORD` | Neo4j 密码 | `your-password` |
 | `APP_ENV` | 运行环境 | `production` |

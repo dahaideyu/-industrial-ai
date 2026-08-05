@@ -44,20 +44,20 @@ import psycopg2.extras
 
 # ==================== 连接配置（env 优先，默认值兜底） ====================
 MYSQL_CONFIG: dict[str, Any] = {
-    "host": os.getenv("SRC_MYSQL_HOST") or os.getenv("AQA_MYSQL_HOST", "192.168.50.213"),
+    "host": os.getenv("SRC_MYSQL_HOST") or os.getenv("AQA_MYSQL_HOST", "CHANGE_ME"),
     "port": int(os.getenv("SRC_MYSQL_PORT") or os.getenv("AQA_MYSQL_PORT", "3306")),
-    "user": os.getenv("SRC_MYSQL_USER") or os.getenv("AQA_MYSQL_USER", "CHANGE_MEonly_user"),
-    "password": os.getenv("SRC_MYSQL_PASSWORD") or os.getenv("AQA_MYSQL_PASSWORD", "CHANGE_ME@2026"),
+    "user": os.getenv("SRC_MYSQL_USER") or os.getenv("AQA_MYSQL_USER", "readonly_user"),
+    "password": os.getenv("SRC_MYSQL_PASSWORD") or os.getenv("AQA_MYSQL_PASSWORD", "CHANGE_ME"),
     "database": os.getenv("SRC_MYSQL_DB") or os.getenv("AQA_MYSQL_DATABASE", "btr"),
     "charset": "utf8mb4",
 }
 
 PG_CONFIG: dict[str, Any] = {
-    "host": os.getenv("DST_PG_HOST", "192.168.50.224"),
+    "host": os.getenv("DST_PG_HOST", "CHANGE_ME"),
     "port": os.getenv("DST_PG_PORT", "15432"),
     "dbname": os.getenv("DST_PG_DB", "knowledge_base"),
     "user": os.getenv("DST_PG_USER", "zxzz"),
-    "password": os.getenv("DST_PG_PASSWORD", "CHANGE_ME@Zxzz"),
+    "password": os.getenv("DST_PG_PASSWORD", "CHANGE_ME"),
 }
 
 BATCH_SIZE = 1000

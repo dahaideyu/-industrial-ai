@@ -165,7 +165,7 @@ class DocumentDownloadRequest(BaseModel):
 
 
 @router.post("/reports/query")
-async def query_reports_list(request: ReportQueryRequest):
+def query_reports_list(request: ReportQueryRequest):
     """
     分页查询报告列表
 
@@ -190,7 +190,7 @@ async def query_reports_list(request: ReportQueryRequest):
 
 
 @router.post("/reports/detail")
-async def get_report_detail_api(request: ReportDetailRequest):
+def get_report_detail_api(request: ReportDetailRequest):
     """
     查询报告详情
 
@@ -310,7 +310,8 @@ async def generate_multi_reports_stream(request: MultiReportsRequest):
             procedure_id = data.get('procedureId') or data.get('procedure_id') or meta.get('procedureId') or meta.get('procedure_id')
             report_date = data.get('reportDate') or data.get('report_date') or meta.get('reportDate') or meta.get('report_date') or meta.get('period')
             if workshop_id and procedure_id and report_date:
-                historical_context = _load_historical_context(
+                historical_context = await asyncio.to_thread(
+                    _load_historical_context,
                     report_code=report_code,
                     workshop_id=int(workshop_id),
                     procedure_id=int(procedure_id),

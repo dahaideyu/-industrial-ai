@@ -1,29 +1,10 @@
-import axios from 'axios'
+import { createApiClient } from './createApiClient.js'
 
-const client = axios.create({
+const client = createApiClient({
   baseURL: '/api',
   timeout: 300000,
-  headers: { 'Content-Type': 'application/json' },
+  handle401: false,
 })
-
-// 请求拦截器：自动附加 JWT token
-client.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
-
-// 响应拦截器：解包 res.data
-client.interceptors.response.use(
-  (res) => res.data,
-  (err) => {
-    const msg = err.response?.data?.detail || err.response?.data?.msg || err.message || '请求失败'
-    console.error('SQL-QA API Error:', msg)
-    return Promise.reject(new Error(msg))
-  }
-)
 
 export default client
 

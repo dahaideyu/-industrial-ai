@@ -282,11 +282,17 @@ def analyze_stages(
     focus_stage: Optional[int] = None,
     focus_state: Optional[str] = None,
     stage_param_override: Optional[str] = None,
+    fetched=None,
 ) -> Dict[str, Any]:
     """主入口：返回阶段配方表 + 概览(+ 锁定阶段的跨批次表)。db 为已连接的 TimescaleDB。
 
     stage_param_override：跳过 detect_stage_param() 自动探测，直接用调用方指定的阶段参数
     （如 Step②脉搏发现里用户已确认的 pulse_param）。不传时行为不变。
+
+    fetched：预取的 (seg, merged, name_map, unit_map, meter_ids) 五元组，与 kpi_analysis.py
+    里 compute_kpi_summary/compute_stage_cpk/compute_energy_breakdown 的 fetched= 约定一致——
+    从 analyze_one_shift() 调用时一次取数四个 Tab 共用，不再各自单独查一遍库。传了 fetched
+    时必须同时传 stage_param_override（fetched 是按哪个阶段参数切分的，调用方自己保证一致）。
     """
     conn = db.conn
     name_map = db.get_point_names(device_code)   # p_name -> 中文名
@@ -297,22 +303,25 @@ def analyze_stages(
         return {"error": "no_stage_param",
                 "msg": "该设备没有可识别的'阶段'参数(中文名含'阶段')，无法按阶段分析。"}
 
-    meter_ids = db.get_energy_device_ids(device_code)
-    raw = _fetch_long(conn, device_code, start, end, meter_ids=meter_ids)
-    if raw.empty:
-        return {"error": "no_data", "msg": "该时间范围内无参数数据。"}
+    if fetched is not None:
+        seg, merged, _fetched_name_map, _fetched_unit_map, meter_ids = fetched
+    else:
+        meter_ids = db.get_energy_device_ids(device_code)
+        raw = _fetch_long(conn, device_code, start, end, meter_ids=meter_ids)
+        if raw.empty:
+            return {"error": "no_data", "msg": "该时间范围内无参数数据。"}
 
-    stage_long = raw[raw["p_name"] == stage_param]
-    if stage_long.empty:
-        return {"error": "no_stage_data",
-                "msg": f"窗口内无阶段参数 {stage_param} 数据。"}
+        stage_long = raw[raw["p_name"] == stage_param]
+        if stage_long.empty:
+            return {"error": "no_stage_data",
+                    "msg": f"窗口内无阶段参数 {stage_param} 数据。"}
 
-    seg = _build_segments(stage_long)
-    if seg.empty:
-        return {"error": "no_segments", "msg": "未能从阶段参数构造出段。"}
+        seg = _build_segments(stage_long)
+        if seg.empty:
+            return {"error": "no_segments", "msg": "未能从阶段参数构造出段。"}
 
-    target_long = raw[raw["p_name"] != stage_param]
-    merged = _attach(target_long, seg)
+        target_long = raw[raw["p_name"] != stage_param]
+        merged = _attach(target_long, seg)
 
     # 段内均值 / 段内变化Δ（先按 seg 聚合，再跨批次平均）
     per_seg = (merged.groupby(["stage", "seg_id", "p_name"])["v"]
@@ -410,6 +419,16 @@ def analyze_stages(
             })
         state_map_out = [{"state": n, "codes": c} for n, c in (groups or [])]
 
+    # 每段(seg_id)、每参数的均值/Δ——per_seg 已经是这个粒度，只是之前只被继续
+    # 聚合成跨批次均值(mean_by/delta_by)，从未把逐段的原始值吐给前端。补上这层
+    # 才能让前端不用再发一次 focus_stage/focus_state 请求，就地从 batches[] 里
+    # 筛出"同阶段/状态跨周期对比"要的数据(见 StageAnalysis.vue)。
+    seg_means: Dict[int, Dict[str, float]] = {}
+    seg_deltas: Dict[int, Dict[str, float]] = {}
+    for r in per_seg.itertuples():
+        seg_means.setdefault(int(r.seg_id), {})[r.p_name] = round(float(r.mean), 3)
+        seg_deltas.setdefault(int(r.seg_id), {})[r.p_name] = round(float(r.delta), 3)
+
     # ── 周期-阶段排列(每周期内各段的实际起止与时长，供前端画周期排列图) ──
     batches_out = []
     for b, grp in seg.groupby("batch"):
@@ -424,6 +443,8 @@ def analyze_stages(
                 "state": _state_of(r.stage),
                 "start": r.t_start.strftime("%H:%M"),
                 "dur_min": round(float(r.dur_min), 1),
+                "means": seg_means.get(int(r.seg_id), {}),
+                "deltas": seg_deltas.get(int(r.seg_id), {}),
             } for r in grp.itertuples()],
         })
 

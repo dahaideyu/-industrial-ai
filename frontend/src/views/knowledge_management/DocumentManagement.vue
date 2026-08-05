@@ -404,6 +404,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { marked } from 'marked'
 import { useKnowledgeManagement } from '../../composables/knowledge_management/useKnowledgeManagement.js'
+import { formatDateTime as formatDate, formatFileSize } from '../../utils/format.js'
 import CustomSelect from './components/CustomSelect.vue'
 import FilePreview from './components/FilePreview.vue'
 import { getDocumentPreviewUrl, deleteVersion, getParseStatus, reparseDocument, stopParse, updateDocument } from '../../api/knowledgeManagementClient.js'
@@ -1042,29 +1043,13 @@ function versionStatusClass(v) {
   return 'bg-slate-100 text-slate-500'
 }
 function scoreTextClass(s) { if (s == null) return 'text-slate-300'; return s >= 85 ? 'text-emerald-600' : s >= 60 ? 'text-amber-600' : 'text-red-600' }
-function formatDate(d) { if (!d) return '—'; try { return new Date(d).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) } catch { return d } }
-function formatFileSize(bytes) { if (!bytes) return '0 B'; if (bytes < 1024) return bytes + ' B'; if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'; return (bytes / 1048576).toFixed(1) + ' MB' }
 </script>
 
 <style scoped>
-.btn-primary { @apply inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white text-[13px] font-medium rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed; }
-.btn-ghost { @apply inline-flex items-center gap-1.5 px-3 py-1.5 text-slate-500 text-[13px] font-medium rounded-lg hover:bg-slate-100 transition-colors; }
-.btn-workflow { @apply inline-flex items-center gap-1 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed; }
 .ai-review-badge { @apply inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ml-2; }
 .ai-review-通过 { @apply bg-emerald-50 text-emerald-600; }
 .ai-review-待完善 { @apply bg-amber-50 text-amber-600; }
 .ai-review-驳回 { @apply bg-red-50 text-red-600; }
-.doc-type-tag { @apply inline-block px-2 py-0.5 rounded text-[11px] font-semibold; }
-.status-badge { @apply inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold; }
-.form-group { @apply mb-3.5; }
-.form-label { @apply block text-[13px] font-medium text-slate-700 mb-1; }
-.form-input, .form-textarea { @apply w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-shadow; }
-.form-textarea { @apply resize-none; }
-.modal-overlay { @apply fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm; }
-.modal { @apply bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6 animate-[modalIn_.2s_ease] max-h-[90vh] overflow-y-auto; }
-.modal h3 { @apply text-base font-bold text-slate-800 mb-4; }
-.modal-footer { @apply flex justify-end gap-3 mt-5; }
-@keyframes modalIn { from { opacity: 0; transform: scale(.96) translateY(-8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 
 /* Markdown 渲染样式 */
 .prose h1 { @apply text-2xl font-bold mt-6 mb-4 pb-2 border-b; }

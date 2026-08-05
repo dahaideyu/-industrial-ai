@@ -14,19 +14,19 @@ from datetime import datetime, timezone
 
 # ==================== 数据库配置（写死）====================
 MYSQL_CONFIG = {
-    "host": "192.168.50.213",
+    "host": "CHANGE_ME",
     "port": 3306,
-    "user": "CHANGE_MEonly_user",
-    "password": "CHANGE_ME@2026",
+    "user": "readonly_user",
+    "password": "CHANGE_ME",
     "database": "btr",
     "charset": "utf8mb4",
 }
 
 PG_CONFIG = {
-    "host": "192.168.50.224",
+    "host": "CHANGE_ME",
     "port": 15432,
     "user": "zxzz",
-    "password": "CHANGE_ME@Zxzz",
+    "password": "CHANGE_ME",
     "database": "knowledge_base",
 }
 

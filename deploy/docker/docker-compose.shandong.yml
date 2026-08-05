@@ -35,6 +35,10 @@ services:
     ports:
       - "8000:8000"
 
+  # PostgreSQL（覆盖为 ARM64 平台）
+  postgresql:
+    platform: linux/arm64
+
   mqtt-etl:
     env_file:
       - ./.env.prod.shandong
